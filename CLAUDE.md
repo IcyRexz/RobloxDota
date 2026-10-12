@@ -32,6 +32,8 @@ rojo sourcemap default.project.json -o sourcemap.json
 luau-lsp analyze --definitions=types/globalTypes.None.d.luau --sourcemap=sourcemap.json src
 selene src
 ```
+Never write to `build.rbxlx`: it is the owner's working Studio place and may hold unsaved-to-repo Studio work. Verify builds into the scratchpad instead (`rojo build default.project.json -o <scratchpad>/check.rbxlx`). Studio-made models are brought into the repo by the owner saving them as `.rbxmx` under `assets/`.
+
 Passing these is not runtime evidence; Studio and phone checks remain NOT RUN until the owner reports results.
 
 ## Completion report per slice

@@ -1,0 +1,148 @@
+{
+  "className": "Model",
+  "children": [
+    {
+      "name": "Tree01",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 10, 5],
+        "Position": [-90, 4.8, -26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree02",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 10, 5],
+        "Position": [-60, 4.8, -26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree03",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 8, 5],
+        "Position": [-30, 3.8, -26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree04",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 8, 5],
+        "Position": [0, 3.8, -26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree05",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 8, 5],
+        "Position": [30, 3.8, -26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree06",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 10, 5],
+        "Position": [60, 4.8, -26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree07",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 10, 5],
+        "Position": [90, 4.8, -26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree08",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 10, 5],
+        "Position": [-75, 4.8, 26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree09",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 8, 5],
+        "Position": [-45, 3.8, 26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree10",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 8, 5],
+        "Position": [-15, 3.8, 26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree11",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 8, 5],
+        "Position": [15, 3.8, 26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree12",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 8, 5],
+        "Position": [45, 3.8, 26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "Tree13",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [5, 10, 5],
+        "Position": [75, 4.8, 26.0],
+        "Color": [0.2, 0.48, 0.22],
+        "Material": "SmoothPlastic"
+      }
+    }
+  ]
+}

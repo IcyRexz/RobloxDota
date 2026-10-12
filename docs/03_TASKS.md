@@ -18,7 +18,7 @@ Follow IDs in order unless all dependencies allow an independent task. Estimates
 
 ## T03 — Build the graybox arena
 - Target day: 1; estimate: 2 h; dependencies: T02.
-- Do: Replace scaffold floor with lane, borders, team spawn pads, tower/core placeholders and explicit entity IDs.
+- Do: Replace scaffold floor with lane, borders, team spawn pads, tower/barracks/core placeholders and explicit entity IDs.
 - Done when: Both spawn pads are reachable; no route bypasses bounds; map is mirrored.
 - Verify: A02.
 - Status: tracked in `TASK_STATUS.md`.
@@ -60,7 +60,7 @@ Follow IDs in order unless all dependencies allow an independent task. Estimates
 
 ## T09 — Implement towers and core victory
 - Target day: 3; estimate: 2 h; dependencies: T07.
-- Do: Server tower targeting/fire; tower death unlocks core; transactional win evaluation.
+- Do: Server tower targeting/fire; tower death unlocks barracks and core; barracks health and destruction flag; transactional win evaluation.
 - Done when: Push can end a match; result happens once; same-step dual core destruction draws.
 - Verify: A06.
 - Status: tracked in `TASK_STATUS.md`.
@@ -74,7 +74,7 @@ Follow IDs in order unless all dependencies allow an independent task. Estimates
 
 ## T11 — Implement one minion type and waves
 - Target day: 3; estimate: 3 h; dependencies: T10.
-- Do: Waypoint movement; target priorities; shared scheduler; lifetime/cap; start/end cleanup.
+- Do: Waypoint movement; target priorities; shared scheduler; lifetime/cap; start/end cleanup; empowered stats after enemy barracks falls.
 - Done when: Both sides push; living count never exceeds 24; no waves after result.
 - Verify: A06 A10.
 - Status: tracked in `TASK_STATUS.md`.

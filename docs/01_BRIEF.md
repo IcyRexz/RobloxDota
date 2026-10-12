@@ -8,7 +8,7 @@ Build a public, touch-only playable Roblox 1v1 lane battler in which two players
 - One public Roblox experience and working start-place link.
 - One symmetrical lane, two opposing players, one shared R15 hero kit.
 - Basic attack, aimed bolt, short dash; a full animation set for every reachable gameplay state.
-- Minion waves, one defensive tower and one core per side.
+- Minion waves, one defensive tower, one barracks and one core per side. (Barracks added by owner decision 2026-10-12; see GDD.)
 - Join, ready, countdown, match, death/respawn, result, rematch.
 - Touch HUD, readable camera, cooldown and health feedback.
 - Server-owned match outcomes, damage, cooldowns, targets and objectives; validated movement observations.
