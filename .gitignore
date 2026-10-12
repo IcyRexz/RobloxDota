@@ -1,0 +1,18 @@
+# Project place file
+/RobloxDota.rbxlx
+
+# Roblox Studio lock files
+/*.rbxlx.lock
+/*.rbxl.lock
+
+sourcemap.json
+
+# Luau type definitions (re-download, see CLAUDE.md)
+/types/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.env
+.env.*
+/build.rbxlx
