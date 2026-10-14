@@ -19,6 +19,11 @@
     "StarterPlayer": {
       "$className": "StarterPlayer",
       "$ignoreUnknownInstances": true,
+      "$properties": {
+        "EnableMouseLockOption": false,
+        "CharacterUseJumpPower": true,
+        "CharacterJumpPower": 0
+      },
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
         "$ignoreUnknownInstances": true,

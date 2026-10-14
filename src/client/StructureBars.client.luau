@@ -6,7 +6,10 @@
 -- structure's Health / MaxHealth attributes) and the bars follow them.
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+
+local Config = require(ReplicatedStorage.Shared.Config)
 
 local ALLY_COLOR = Color3.fromRGB(70, 200, 90)
 local ENEMY_COLOR = Color3.fromRGB(220, 60, 60)
@@ -16,8 +19,6 @@ local BAR_HEIGHT = 14
 local NAME_HEIGHT = 18
 local HP_PER_TICK = 100 -- one divider line per 100 health, like MOBA bars
 local STRUCTURE_KINDS = { Tower = true, Barracks = true, Core = true }
--- Bars farther than this from your character are hidden.
-local SHOW_DISTANCE = 60
 local VISIBILITY_CHECK_SECONDS = 0.2
 -- Until match teams exist (task T05), everyone is treated as Blue.
 local DEFAULT_TEAM = "Blue"
@@ -133,6 +134,17 @@ local function createBar(structure: BasePart)
 		refresh(bar)
 	end)
 	billboard.Parent = playerGui
+
+	-- The server removes a structure when it is destroyed; drop its bar too.
+	structure.AncestryChanged:Connect(function()
+		if not structure:IsDescendantOf(game) then
+			billboard:Destroy()
+			local index = table.find(bars, bar)
+			if index then
+				table.remove(bars, index)
+			end
+		end
+	end)
 end
 
 for _, item in arena:GetDescendants() do
@@ -164,7 +176,9 @@ while true do
 	local origin = viewerPosition()
 	if origin then
 		for _, bar in bars do
-			bar.billboard.Enabled = (bar.structure.Position - origin).Magnitude <= SHOW_DISTANCE
+			-- Bars farther than HealthBarRange from your hero (flat distance) are hidden.
+			local offset = bar.structure.Position - origin
+			bar.billboard.Enabled = Vector3.new(offset.X, 0, offset.Z).Magnitude <= Config.Display.HealthBarRange
 		end
 	end
 	task.wait(VISIBILITY_CHECK_SECONDS)

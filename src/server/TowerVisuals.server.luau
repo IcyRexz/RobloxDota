@@ -65,6 +65,23 @@ local function dressTower(block: BasePart)
 	model.Name = block.Name .. "Visual"
 	model.Parent = block.Parent
 	block.Transparency = 1
+
+	-- Shots start at the sword tip: the upper end of the sword's long side.
+	-- Structures.server and the client effects read this "Muzzle" attachment.
+	local sword = model:FindFirstChild("Sword")
+	if sword and sword:IsA("BasePart") then
+		local size = sword.Size
+		local longAxis = if size.X >= size.Y and size.X >= size.Z
+			then Vector3.xAxis * size.X
+			elseif size.Y >= size.Z then Vector3.yAxis * size.Y
+			else Vector3.zAxis * size.Z
+		local endA = sword.CFrame:PointToWorldSpace(longAxis / 2)
+		local endB = sword.CFrame:PointToWorldSpace(-longAxis / 2)
+		local muzzle = Instance.new("Attachment")
+		muzzle.Name = "Muzzle"
+		muzzle.Parent = block
+		muzzle.WorldPosition = if endA.Y >= endB.Y then endA else endB
+	end
 end
 
 for _, item in arena:GetDescendants() do

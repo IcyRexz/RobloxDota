@@ -1,0 +1,104 @@
+--!strict
+-- The one place damage is applied. Anything that hurts anything calls applyDamage.
+-- First version of T06's damage gateway: handles minions and structures, which
+-- keep their health in the server-owned Health/MaxHealth attributes. Heroes and
+-- backdoor protection are added when hero damage exists.
+
+local Workspace = game:GetService("Workspace")
+
+local CombatService = {}
+
+local MAX_DAMAGE = 10000 -- no single hit is ever this big; anything larger is a bug
+
+local diedEvent = Instance.new("BindableEvent")
+-- Fires (target: Instance, killer: Instance, killerTeam: string) once, when a
+-- target's health reaches 0. The killer is whoever landed the final hit, so
+-- last-hit rewards (gold later) read it from here. The killer may already be
+-- dead or removed (an archer's arrow still lands after the archer dies).
+CombatService.Died = diedEvent.Event
+
+local damagedEvent = Instance.new("BindableEvent")
+-- Fires (target: Instance, attacker: Instance, attackerTeam: string, dealt: number)
+-- after every hit that deals damage (before Died, if the hit was fatal).
+CombatService.Damaged = damagedEvent.Event
+
+-- Development log: prints every death and its killer to Output.
+local LOG_DEATHS = true
+
+local function describe(unit: Instance): string
+	local team = unit:GetAttribute("Team")
+	local kind = unit:GetAttribute("MinionType") or unit:GetAttribute("Kind") or unit.ClassName
+	return `{if typeof(team) == "string" then team else "?"} {kind}`
+end
+
+local function isValidAmount(amount: number): boolean
+	return amount == amount -- false for NaN
+		and amount > 0
+		and amount <= MAX_DAMAGE
+end
+
+function CombatService.getHealth(target: Instance): number
+	local health = target:GetAttribute("Health")
+	return if typeof(health) == "number" then health else 0
+end
+
+function CombatService.isAlive(target: Instance): boolean
+	return target.Parent ~= nil and CombatService.getHealth(target) > 0
+end
+
+-- Each team's tower and barracks (the inhibitor), found once from the map.
+local towers: { [string]: Instance } = {}
+local barracks: { [string]: Instance } = {}
+for _, item in Workspace:WaitForChild("Arena"):GetDescendants() do
+	local team = item:GetAttribute("Team")
+	local kind = item:GetAttribute("Kind")
+	if typeof(team) == "string" then
+		if kind == "Tower" then
+			towers[team] = item
+		elseif kind == "Barracks" then
+			barracks[team] = item
+		end
+	end
+end
+
+-- Objectives fall in order: tower, then barracks, then core. A structure cannot
+-- be damaged while the one in front of it (same team) still stands.
+function CombatService.isLocked(target: Instance): boolean
+	local kind = target:GetAttribute("Kind")
+	local team = target:GetAttribute("Team")
+	if typeof(team) ~= "string" then
+		return false
+	end
+	local guard = if kind == "Barracks" then towers[team] elseif kind == "Core" then barracks[team] else nil
+	return guard ~= nil and CombatService.isAlive(guard)
+end
+
+-- Deals damage from an attacker to a target. attackerTeam is captured by the
+-- caller when the attack starts, so a delayed hit still knows its side.
+-- Returns the damage actually dealt (0 if the hit was refused: bad amount,
+-- same team, already dead or locked).
+function CombatService.applyDamage(target: Instance, amount: number, attacker: Instance, attackerTeam: string): number
+	if not isValidAmount(amount) then
+		return 0
+	end
+	if target:GetAttribute("Team") == attackerTeam then
+		return 0
+	end
+	if not CombatService.isAlive(target) or CombatService.isLocked(target) then
+		return 0
+	end
+
+	local health = CombatService.getHealth(target)
+	local dealt = math.min(amount, health)
+	target:SetAttribute("Health", health - dealt)
+	damagedEvent:Fire(target, attacker, attackerTeam, dealt)
+	if health - dealt <= 0 then
+		if LOG_DEATHS then
+			print(`[Combat] {describe(target)} killed by {describe(attacker)}`)
+		end
+		diedEvent:Fire(target, attacker, attackerTeam)
+	end
+	return dealt
+end
+
+return CombatService

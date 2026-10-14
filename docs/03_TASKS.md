@@ -60,7 +60,7 @@ Follow IDs in order unless all dependencies allow an independent task. Estimates
 
 ## T09 — Implement towers and core victory
 - Target day: 3; estimate: 2 h; dependencies: T07.
-- Do: Server tower targeting/fire; tower death unlocks barracks and core; barracks health and destruction flag; transactional win evaluation.
+- Do: Server tower targeting/fire; tower death unlocks barracks, barracks death unlocks core; barracks health and destruction flag; transactional win evaluation.
 - Done when: Push can end a match; result happens once; same-step dual core destruction draws.
 - Verify: A06.
 - Status: tracked in `TASK_STATUS.md`.
@@ -75,7 +75,7 @@ Follow IDs in order unless all dependencies allow an independent task. Estimates
 ## T11 — Implement one minion type and waves
 - Target day: 3; estimate: 3 h; dependencies: T10.
 - Do: Waypoint movement; target priorities; shared scheduler; lifetime/cap; start/end cleanup; empowered stats after enemy barracks falls.
-- Done when: Both sides push; living count never exceeds 24; no waves after result.
+- Done when: Both sides push; living count never exceeds 30; no waves after result.
 - Verify: A06 A10.
 - Status: tracked in `TASK_STATUS.md`.
 

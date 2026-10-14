@@ -8,7 +8,7 @@ Build a public, touch-only playable Roblox 1v1 lane battler in which two players
 - One public Roblox experience and working start-place link.
 - One symmetrical lane, two opposing players, one shared R15 hero kit.
 - Basic attack, aimed bolt, short dash; a full animation set for every reachable gameplay state.
-- Minion waves, one defensive tower, one barracks and one core per side. (Barracks added by owner decision 2026-10-12; see GDD.)
+- Minion waves, one defensive tower, one inhibitor (called "barracks" in code) and one core per side, destroyed in that order: tower, inhibitor, core. (Inhibitor added by owner decision 2026-10-12; order enforced by owner decision 2026-10-15; see GDD.)
 - Join, ready, countdown, match, death/respawn, result, rematch.
 - Touch HUD, readable camera, cooldown and health feedback.
 - Server-owned match outcomes, damage, cooldowns, targets and objectives; validated movement observations.
@@ -25,3 +25,6 @@ Two non-editor accounts can use actual phones to join the same public server, fi
 
 ## Owner decisions needed on day one
 Choose the account/group that owns the game and animations, confirm publishing eligibility, recruit the second phone/account, record a baseline mobile device, and enter the actual start date. Defaults cover ordinary gameplay choices; do not delay implementation for visual preferences. If publishing is blocked, report it immediately and continue independent coding without pretending the public requirement is met.
+
+## Kept in view (KIV), not scheduled
+Owner note 2026-10-15: a small economy may be added later if time allows: gold for last hits (CombatService already reports the killer), a passive gold tick, gold in the HUD, and a base-only shop with 3-4 stat items (damage, health, move speed). Not part of the current scope and not built until the owner schedules it; the exclusions above still apply until then.
