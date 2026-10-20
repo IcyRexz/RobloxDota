@@ -1,26 +1,30 @@
 # Claude project instructions
 
-You are implementing this mobile-first 1v1 Roblox MOBA prototype from the files in this repository. Read docs/01_BRIEF.md through docs/07_ACCEPTANCE_TESTS.md before coding. The current user request and confirmed decisions outrank these defaults. The old 3v3 plan is superseded; unavailable old content must not be invented.
+You are implementing a PC-first cooperative base-defense shooter for Roblox (1–5 players defend a walled compound and its Base Core against enemy waves; hub with classes, weapons and persistent progression). Read `docs/01_BRIEF.md` through `docs/06_ACCEPTANCE_TESTS.md` before coding. The current user request and confirmed decisions outrank these defaults.
+
+Genre switch (owner decision 2026-10-20): the earlier mobile-first 1v1 MOBA is archived in `docs/archive/moba/` (design, task log, decisions). Its code in `src/` is being reused; `docs/03_TASKS.md` says which file feeds which task. Archived docs are history, not rules.
 
 ## Work contract
-1. Inspect the current files and TASK_STATUS.md. State what actually works, then take the next unmet dependency-eligible task from docs/03_TASKS.md.
-2. Implement concrete files, not only advice. Keep one reviewable slice per iteration. Prefer simple Luau modules and built-in services; avoid unneeded frameworks/packages.
-3. Maintain explicit server authority for membership, damage, cooldowns, targeting, objectives and results. Never trust client damage, origin, target or hit messages. Address client-owned movement separately as specified.
-4. Optimize for mobile. Desktop test keys are development helpers only. Do not defer touch until the final day.
-5. Preserve one hero's complete animation set and public-playtesting requirement. Never mark zero animation IDs or permission failures complete.
-6. Run available checks. For checks requiring Studio/real phones, give exact actions and expected results, mark NOT RUN until evidence arrives, and keep independent work moving. Do not claim to have run Studio, Rojo, published an asset, tested a phone or completed a match without actual evidence.
-7. Update TASK_STATUS.md with changed paths, checks and blockers. Record design deviations and why; keep Config, GDD and tests consistent. Mark partial tasks IN_PROGRESS, not DONE.
-8. Use the seven-day target and fourteen-calendar-day cap. No feature expansion. Cut decorative work first. Do not ask permission for routine reversible implementation choices; ask only for truly missing requirements or account/paid/publishing actions outside granted access.
-9. Do not send messages to testers, buy assets/services, pay platform fees, request secrets, overwrite unrelated places or publish externally without appropriate user authorization. Provide the owner a concrete ready-to-publish candidate/checklist.
-10. Stop at release gates. A build with failing P0 criteria is unfinished. On day 14 deliver current source and exact unmet requirements rather than silently extending the schedule.
+1. Inspect the current files and TASK_STATUS.md. State what actually works. The owner chooses the next change one at a time; if they have not, propose the next dependency-eligible task from docs/03_TASKS.md and wait.
+2. For broad or structural changes (genre, scope, many files), present the plan first and wait for the owner's go-ahead.
+3. Implement concrete files, not only advice. Keep one reviewable slice per iteration. Prefer simple Luau modules and built-in services; avoid unneeded frameworks/packages.
+4. Maintain explicit server authority for membership, damage, cooldowns, targeting, waves, Gold, building/repair, credits, progression and results. Never trust client damage, origin, target, hit, currency or placement messages. Address client-owned movement separately as specified.
+5. PC (mouse and keyboard) is the launch platform. Mobile is a later port (T26); keep UI and input code easy to adapt but do not build touch until scheduled.
+6. Animations are deferred (owner decision 2026-10-20); default Roblox animations are fine until the owner schedules T25.
+7. Design items marked OPEN in docs/01_BRIEF.md and docs/02_GDD.md are the owner's to decide; ask before inventing them. Routine reversible implementation choices need no permission.
+8. Run available checks. For checks requiring Studio or real devices, give exact actions and expected results, mark NOT RUN until evidence arrives. Do not claim to have run Studio, Rojo, published an asset, tested a device or completed a mission without actual evidence.
+9. Update TASK_STATUS.md with changed paths, checks and blockers. Record design deviations and why; keep Config, GDD and tests consistent. Mark partial tasks IN_PROGRESS, not DONE.
+10. There is no schedule (owner decision 2026-10-20). Do not expand scope beyond the brief without the owner.
+11. Do not send messages to testers, buy assets/services, pay platform fees, request secrets, overwrite unrelated places or publish externally without appropriate user authorization. Provide the owner a concrete ready-to-publish candidate/checklist.
+12. Stop at release gates. A build with failing P0 criteria is unfinished.
 
 ## Code conventions
-Use `--!strict`, descriptive service/controller names, immutable public config and server-only mutable state. Keep remote schemas small/exact, reject NaN/infinity and oversized numbers, rate-limit before expensive work, use server time for cooldowns, and invalidate delayed callbacks by match epoch/character generation. Clean every event connection and spawned instance you own. No DataStores, external HTTP, monetization or plugin dependencies unless later explicitly required.
+Use `--!strict`, descriptive service/controller names, immutable public config and server-only mutable state. Keep remote schemas small/exact, reject NaN/infinity and oversized numbers, rate-limit before expensive work, use server time for cooldowns, and invalidate delayed callbacks by mission epoch/character generation. Clean every event connection and spawned instance you own. DataStores are allowed for persistent progression only, following the rules in docs/05_ARCHITECTURE.md. No external HTTP, monetization or plugin dependencies unless later explicitly required.
 
 Use the `.luau` extension (`.server.luau`, `.client.luau`, plain `.luau` for ModuleScripts).
 
 ## Build-one-file-at-a-time rule (owner decision, 2026-10-12)
-The original starter pack shipped a prebuilt source scaffold (Config, Protocol, AnimationManifest, ActionSchema, RateLimiter, a Smoke test, server/client bootstraps). The owner chose NOT to import it. Code is written one file at a time, each explained and tested in Studio before the next. Docs that mention "the scaffold", "bundled source" or specific `.lua` files describe that unimported pack; treat them as design intent, not as files that exist. Update those docs as the real files land. Remote handlers stay deny-by-default until the matching authoritative implementation exists.
+The original starter pack's prebuilt scaffold (Config, Protocol, AnimationManifest, ActionSchema, RateLimiter, Smoke test, bootstraps) was NOT imported. Code is written one file at a time, each explained and tested in Studio before the next. Remote handlers stay deny-by-default until the matching authoritative implementation exists.
 
 ## Reference docs are living documents
 `docs/`, `templates/` and this file hold the rules, design and themes. Update them as decisions change rather than leaving them stale; record why in TASK_STATUS.md.
@@ -34,7 +38,7 @@ selene src
 ```
 Never write to `build.rbxlx`: it is the owner's working Studio place and may hold unsaved-to-repo Studio work. Verify builds into the scratchpad instead (`rojo build default.project.json -o <scratchpad>/check.rbxlx`). Studio-made models are brought into the repo by the owner saving them as `.rbxmx` under `assets/`.
 
-Passing these is not runtime evidence; Studio and phone checks remain NOT RUN until the owner reports results.
+Passing these is not runtime evidence; Studio and device checks remain NOT RUN until the owner reports results.
 
 ## Completion report per slice
-State: implemented behavior; files changed; checks actually run and results; remaining manual check; next task. Keep concise. On final release, provide the real public URL, source version, tested devices, animation ownership/credits, README and known issues.
+State: implemented behavior; files changed; checks actually run and results; remaining manual check; suggested next task. Keep concise. On final release, provide the real public URL, source version, tested devices, asset ownership/credits, README and known issues.

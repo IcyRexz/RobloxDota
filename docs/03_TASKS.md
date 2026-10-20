@@ -1,188 +1,168 @@
-# Ordered implementation tasks
+# Implementation tasks
 
-Follow IDs in order unless all dependencies allow an independent task. Estimates are focused developer hours, not guarantees. Studio/asset/account tasks require the owner when Claude has no access. Do not mark a task DONE until its check has evidence. A01–A14 refer to `07_ACCEPTANCE_TESTS.md`.
+Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is no schedule: the owner picks the next change one at a time. Dependencies show what must exist first. A task is DONE only with evidence; partial work is IN_PROGRESS. A01–A16 refer to `06_ACCEPTANCE_TESTS.md`. Status lives in `TASK_STATUS.md`.
 
-## T01 — Confirm release prerequisites
-- Target day: 1; estimate: 1 h; dependencies: none.
-- Do: Choose owner; check live publishing eligibility; select two phone accounts and baseline device; record start date.
-- Done when: Eligibility result and device/tester plan recorded; blockers named.
-- Verify: A12.
-- Status: tracked in `TASK_STATUS.md`.
+**Reuses** names the existing prototype code (or old MOBA task, archived in `docs/archive/moba/03_TASKS.md`) the task starts from.
 
-## T02 — Open the source scaffold
-- Target day: 1; estimate: 1 h; dependencies: T01.
-- Do: Install matching Rojo v7 CLI/plugin; build a new place; sync; inspect server/client output.
-- Done when: Both bootstrap messages appear; project tree maps correctly; no script errors.
-- Verify: A01.
-- Status: tracked in `TASK_STATUS.md`.
+## Part A — Mission core loop
 
-## T03 — Build the graybox arena
-- Target day: 1; estimate: 2 h; dependencies: T02.
-- Do: Replace scaffold floor with lane, borders, team spawn pads, tower/barracks/core placeholders and explicit entity IDs.
-- Done when: Both spawn pads are reachable; no route bypasses bounds; map is mirrored.
-- Verify: A02.
-- Status: tracked in `TASK_STATUS.md`.
+### T01 — Confirm release prerequisites
+- Depends on: none. Reuses: old T01.
+- Do: Owning account/group, live publishing eligibility, test accounts, baseline PC (and later phones).
+- Done when: eligibility result and tester plan recorded; blockers named. Verify: A14.
 
-## T04 — Implement mobile camera and movement
-- Target day: 1; estimate: 2 h; dependencies: T03.
-- Do: Fixed elevated follow camera; native left thumbstick; R15 rig; remove jump and forbidden states.
-- Done when: Phone emulator supports motion with unobstructed view; real-phone smoke check queued.
-- Verify: A02.
-- Status: tracked in `TASK_STATUS.md`.
+### T02 — Toolchain and source layout
+- Depends on: T01. Reuses: old T02 (Rojo project, rokit, static checks).
+- Do: Keep `default.project.json` mapping; confirm Studio sync; record versions.
+- Done when: Rojo syncs into Studio with no script errors. Verify: A01.
 
-## T05 — Implement match membership and ready flow
-- Target day: 2; estimate: 2 h; dependencies: T03.
-- Do: Add MatchService and epoch; assign two teams; Waiting/Countdown/Playing; ready debounce.
-- Done when: One player waits; two must Ready; departure cancels countdown.
-- Verify: A03.
-- Status: tracked in `TASK_STATUS.md`.
+### T03 — Build the compound graybox map
+- Depends on: T02. Reuses: `src/map/` (BlueBase, Lane, RedBase, Decor), old T03.
+- Do: Walled compound with Base Core in the bottom half, gates, player spawn, pre-placed build nodes; open ground in the top half; enemy spawn markers along the top; enemy path waypoints. Keep the map closed so players cannot escape.
+- Done when: players spawn in the compound, can reach every node, cannot leave the map; enemies have a valid path to the core. Verify: A02.
 
-## T06 — Implement entities and damage authority
-- Target day: 2; estimate: 2 h; dependencies: T05.
-- Do: Entity registry for hero/structures; server health; team, alive, protection and core-lock rules; single damage entry point.
-- Done when: Client cannot set damage/health; friendly and locked-core damage rejected.
-- Verify: A07.
-- Status: tracked in `TASK_STATUS.md`.
+### T04 — Camera and desktop movement
+- Depends on: T03. Reuses: `HeroCamera.client.luau` (kept as is), old T04.
+- Do: Keep the fixed follow camera; WASD movement; no jump/climb/swim.
+- Done when: camera shows enough of the top half to see incoming waves. Verify: A02.
 
-## T07 — Implement Pulse end to end
-- Target day: 2; estimate: 3 h; dependencies: T04 T06.
-- Do: Server target selection, line of sight, cooldown, windup and impact revalidation; hold-to-repeat mobile button.
-- Done when: Two clients see one accepted hit; no target spends no cooldown; invalid targets never take damage.
-- Verify: A04 A07.
-- Status: tracked in `TASK_STATUS.md`.
+### T05 — Mission flow and party membership
+- Depends on: T03. Reuses: `PlayerTeams.server.luau` (single defender team), old T05.
+- Do: MissionService with epoch; Hub -> Briefing -> BuildPhase/Wave loop -> Results -> Resetting; 1–5 players; join/leave rules from the GDD.
+- Done when: a solo player and a 2-player party can start a mission; leaving during Briefing cancels; leaving mid-mission keeps the others playing. Verify: A03.
 
-## T08 — Implement death and respawn
-- Target day: 2; estimate: 1.5 h; dependencies: T07.
-- Do: Cancel hero actions; death animation hook; five-second respawn; protection; new character bindings.
-- Done when: Dead heroes cannot act; repeated deaths restore controls once; protection rules work.
-- Verify: A05.
-- Status: tracked in `TASK_STATUS.md`.
+### T06 — Damage authority for the new entity set
+- Depends on: T05. Reuses: `CombatService.luau` (validation, killer tracking, `Damaged`/`Died` events), old T06.
+- Do: One defender team; entity kinds Player, Enemy, Wall, Turret, Trap, Core; remove the lane lock order; no friendly fire.
+- Done when: client cannot set health/damage; friendly damage rejected; killer reported for Gold. Verify: A07.
 
-## T09 — Implement towers and core victory
-- Target day: 3; estimate: 2 h; dependencies: T07.
-- Do: Server tower targeting/fire; tower death unlocks barracks, barracks death unlocks core; barracks health and destruction flag; transactional win evaluation.
-- Done when: Push can end a match; result happens once; same-step dual core destruction draws.
-- Verify: A06.
-- Status: tracked in `TASK_STATUS.md`.
+### T07 — Player character, death and respawn
+- Depends on: T06. Reuses: `Heroes.server.luau`, old T08.
+- Do: Server-owned health per class (placeholder stats until T18); death rules from the GDD (OPEN items decided first).
+- Done when: dead players cannot act; respawn restores controls once. Verify: A05.
 
-## T10 — Implement results and clean rematch
-- Target day: 3; estimate: 2 h; dependencies: T09.
-- Do: Timeout tiebreak; disconnect forfeit; results buttons; match epoch invalidation; destroy spawned entities and reset registry.
-- Done when: Three debug-short matches reset health, cooldowns and connections without duplicates.
-- Verify: A03 A06 A11.
-- Status: tracked in `TASK_STATUS.md`.
+### T08 — Primary weapon firing (PC)
+- Depends on: T04 T06. Reuses: `HeroActions.server.luau`, `HeroControls.client.luau`, `Targeting.luau`, `HeroEffects.client.luau` (old Pulse, T07).
+- Do: Fire the equipped weapon with the mouse (aim model confirmed by owner); server validates origin, direction/target, range, line of sight, rate and cooldown; cosmetic tracer.
+- Done when: shots hit enemies only through the server path; spam and bad payloads are dropped. Verify: A04 A07.
 
-## T11 — Implement one minion type and waves
-- Target day: 3; estimate: 3 h; dependencies: T10.
-- Do: Waypoint movement; target priorities; shared scheduler; lifetime/cap; start/end cleanup; empowered stats after enemy barracks falls.
-- Done when: Both sides push; living count never exceeds 30; no waves after result.
-- Verify: A06 A10.
-- Status: tracked in `TASK_STATUS.md`.
+### T09 — Enemy waves
+- Depends on: T06. Reuses: `Minions.server.luau`, `MinionVisuals.client.luau` (old T11).
+- Do: Enemies spawn at the top, walk to the compound, target players / built structures / core; wave list per map in Config; alive cap; cleanup on mission end.
+- Done when: waves arrive on cue, attack all three target kinds, never exceed the cap, and stop after Results. Verify: A06 A10.
 
-## T12 — Reach complete graybox milestone
-- Target day: 3; estimate: 1 h; dependencies: T11.
-- Do: Play start-to-core victory with two clients, then rematch; log blockers.
-- Done when: A complete lane match works without admin commands.
-- Verify: A03 A06.
-- Status: tracked in `TASK_STATUS.md`.
+### T10 — Base Core and win/loss
+- Depends on: T09. Reuses: core part, `StructureBars.client.luau`, `Announcements.client.luau`, old T09.
+- Do: Core health; loss on destruction; win when the final wave is cleared; result committed once per epoch.
+- Done when: both outcomes reachable; late damage cannot change a committed result. Verify: A06.
 
-## T13 — Build final three-button touch layout
-- Target day: 4; estimate: 2 h; dependencies: T04 T07.
-- Do: Responsive anchors, safe insets, cooldown overlays; movement/action simultaneous touches; release cancellation.
-- Done when: Thumbstick, held Pulse and separate aim touch do not steal one another.
-- Verify: A04.
-- Status: tracked in `TASK_STATUS.md`.
+### T11 — Gold economy
+- Depends on: T06 T09. Reuses: `CombatService` killer report.
+- Do: Gold per kill (per-player or team pool per owner decision); server-owned balance; HUD counter; reset each mission.
+- Done when: Gold only changes on server-confirmed kills and purchases. Verify: A07 A08.
 
-## T14 — Implement aimed Arc Bolt
-- Target day: 4; estimate: 3 h; dependencies: T13 T06.
-- Do: Track one aim pointer; local indicator; tap fallback; validated planar direction; server swept projectile.
-- Done when: Bolt hits at most one eligible enemy; walls block; cancellation sends no cast.
-- Verify: A04 A07.
-- Status: tracked in `TASK_STATUS.md`.
+### T12 — Build phase and build nodes
+- Depends on: T05 T11.
+- Do: Build-phase timer; build menu at nodes; server checks phase, node free, Gold, range to node; places a wall/turret/trap.
+- Done when: building works only in the build phase, only at nodes, only with enough Gold. Verify: A08.
 
-## T15 — Implement Slip and movement validation
-- Target day: 4; estimate: 2 h; dependencies: T13 T06.
-- Do: Server clamp and sweep; bounded dash grant; legal-position history; speed/bounds checks and correction.
-- Done when: Dash cannot cross wall; teleport then attack cannot deal remote damage.
-- Verify: A07 A08.
-- Status: tracked in `TASK_STATUS.md`.
+### T13 — Walls, turrets and traps
+- Depends on: T12. Reuses: `Structures.server.luau` tower AI, `TowerVisuals.server.luau`, `TowerEffects.client.luau`, `assets/TowerModel.rbxmx`.
+- Do: Wall (blocks, has health), turret (targets enemies), trap (per owner design); destroyed pieces free their node.
+- Done when: each piece works against a live wave. Verify: A06.
 
-## T16 — Test first real-phone duel
-- Target day: 4; estimate: 1 h; dependencies: T14 T15.
-- Do: Publish a test build with appropriate access; use two phones in same server; record input and latency defects.
-- Done when: Both players move, attack, aim and dash using touch only; urgent issues ticketed.
-- Verify: A04 A09.
-- Status: tracked in `TASK_STATUS.md`.
+### T14 — Repair
+- Depends on: T13.
+- Do: Repair damaged pieces (rules per owner decision); server-checked cost and phase.
+- Done when: repair restores health, costs correctly and cannot overheal. Verify: A08.
 
-## T17 — Create and publish complete animation set
-- Target day: 5; estimate: 3 h; dependencies: T08 T14 T15.
-- Do: Author/source approved R15 clips; use correct owner; fill manifest with asset IDs and credits; implement loading.
-- Done when: Every reachable state has an approved clip; all load on both accounts.
-- Verify: A05.
-- Status: tracked in `TASK_STATUS.md`.
+### T15 — Results and clean reset
+- Depends on: T10. Reuses: old T10 (epoch invalidation, reset).
+- Do: Results screen with outcome and rewards; destroy mission entities; reset Gold, structures, core; return players to the hub.
+- Done when: three back-to-back missions reset fully with no leftover enemies, pieces or connections. Verify: A03 A10 A11.
 
-## T18 — Integrate animation arbitration
-- Target day: 5; estimate: 2 h; dependencies: T17.
-- Do: Priorities, windup timing, interruption, pooling of tracks, respawn rebinding and remote-player visibility.
-- Done when: No stuck pose after cancellation/death/rematch; visual impact matches combat timing.
-- Verify: A05.
-- Status: tracked in `TASK_STATUS.md`.
+### T16 — Complete graybox mission milestone
+- Depends on: T08 T13 T14 T15. Reuses: old T12.
+- Do: Play hub -> full mission -> results -> hub with two clients.
+- Done when: a whole mission works without admin commands. Verify: A03 A06.
 
-## T19 — Finish combat HUD and onboarding
-- Target day: 5; estimate: 1.5 h; dependencies: T10 T13.
-- Do: Health/core bars, countdown, tutorial hint, result reason, rematch waiting state, target/aim feedback.
-- Done when: New tester can find win condition and all actions without keyboard.
-- Verify: A04 A13.
-- Status: tracked in `TASK_STATUS.md`.
+## Part B — Hub and progression
 
-## T20 — Add readable combat feedback
-- Target day: 5; estimate: 1 h; dependencies: T18 T19.
-- Do: Small pooled VFX, basic licensed audio, tower/core hit feedback; reduce expensive effects.
-- Done when: All three actions and enemy attacks are distinguishable on a small phone.
-- Verify: A05 A09.
-- Status: tracked in `TASK_STATUS.md`.
+### T17 — Hub area
+- Depends on: T05.
+- Do: Hub zone in the same place; class picker, loadout screen, mission queue pad, map choice limited by level.
+- Done when: players pick a class and loadout and start a mission from the hub. Verify: A03.
 
-## T21 — Run authority and abuse tests
-- Target day: 6; estimate: 2 h; dependencies: T11 T15.
-- Do: Invalid payloads, spam, stale epoch, replay, dead/wrong-team actions, out-of-range and teleported origins.
-- Done when: No unauthorized damage or server exception; record expected and actual behavior.
-- Verify: A07 A08.
-- Status: tracked in `TASK_STATUS.md`.
+### T18 — Classes
+- Depends on: T07 T08 T17.
+- Do: Assault, Engineer, Medic, Heavy stats and abilities (owner design first).
+- Done when: each class plays differently in a mission. Verify: A04.
 
-## T22 — Run performance and lifecycle tests
-- Target day: 6; estimate: 2 h; dependencies: T20.
-- Do: Baseline phone 15-minute session; max minions; repeated deaths; background/resume; disconnects; memory/instance trend.
-- Done when: Meet A09–A11; attach evidence and defects; no unsupported performance claims.
-- Verify: A09 A10 A11.
-- Status: tracked in `TASK_STATUS.md`.
+### T19 — Weapons and gear
+- Depends on: T08 T17.
+- Do: Weapon/gear catalogue in Config; equip in hub; server enforces ownership.
+- Done when: equipped items work in missions; unowned items cannot be used. Verify: A07.
 
-## T23 — Fix release blockers and tune pacing
-- Target day: 6; estimate: 2 h; dependencies: T21 T22.
-- Do: Fix P0 defects first; adjust damage/health/waves only; freeze feature list.
-- Done when: All current P0 failures resolved and relevant tests rerun.
-- Verify: A01–A12.
-- Status: tracked in `TASK_STATUS.md`.
+### T20 — Persistent progression
+- Depends on: T15 T17.
+- Do: DataStore profile (credits, class levels/XP, owned items, loadouts); load on join, save on change/leave/shutdown; retries; session lock; credits and XP awarded at Results; shop purchases.
+- Done when: progress survives rejoin; failures neither lose nor duplicate progress. Verify: A09.
 
-## T24 — Verify public release
-- Target day: 7; estimate: 2 h; dependencies: T23.
-- Do: Follow publishing checklist; review actual public reach; two non-editor mobile accounts join same public server.
-- Done when: Verified playable public URL recorded; required audience can access.
-- Verify: A12.
-- Status: tracked in `TASK_STATUS.md`.
+### T21 — Harder maps and difficulty
+- Depends on: T03 T20.
+- Do: More maps or difficulty tiers unlocked by class level, with better rewards.
+- Done when: locked maps cannot be started; unlocked ones pay more. Verify: A06 A09.
 
-## T25 — Run observed mobile playtests
-- Target day: 7; estimate: 1.5 h; dependencies: T24.
-- Do: At least five full matches, three consecutive; recruit five first-time testers if available; record understanding/rematch counts.
-- Done when: Observed results recorded honestly; insufficient sample flagged, never invented.
-- Verify: A13.
-- Status: tracked in `TASK_STATUS.md`.
+### T22 — Boss final wave
+- Depends on: T09 T10.
+- Do: Boss enemy for the final wave (owner design first).
+- Done when: beating the boss wins; boss cannot break server rules. Verify: A06.
 
-## T26 — Finish handoff and evidence
-- Target day: 7; estimate: 1 h; dependencies: T25.
-- Do: Fill README; credits; known issues; tested version and device details; source snapshot and optional short demo.
-- Done when: Public URL works and all deliverables match shipped behavior.
-- Verify: A14.
-- Status: tracked in `TASK_STATUS.md`.
+## Part C — Polish, ports and release
 
-## Recovery tasks (only within days 8–14)
-R01: reproduce and rank all failing P0 checks. R02: resolve blockers one system at a time. R03: retest changed behavior on two devices. R04: publish the corrected build and verify its version. R05: finalize evidence and freeze at day 14. Never use the buffer for new heroes, ranked play, items or new maps.
+### T23 — HUD and onboarding
+- Depends on: T11 T15. Reuses: `HeroHud.client.luau`, `Announcements.client.luau`, old T19.
+- Do: Gold, wave/phase timer, core bar, ammo, class/level badge; first-mission hints.
+- Done when: a new player understands the goal and how to build without coaching. Verify: A13.
+
+### T24 — Combat feedback
+- Depends on: T13 T23. Reuses: `HeroEffects`, `TowerEffects`, old T20.
+- Do: Pooled VFX, licensed audio, hit/damage feedback on enemies, walls and core.
+- Done when: important events are readable during a full wave. Verify: A12.
+
+### T25 — Animations (deferred)
+- Depends on: owner decision. Reuses: old T17/T18 rules (archived).
+- Do: Owner decides scope later. Until then, Roblox default animations are used and no animation gate blocks release.
+
+### T26 — Mobile port (deferred)
+- Depends on: owner scheduling. Reuses: old T13–T16 touch rules (archived `05_MOBILE_ANIMATIONS.md`).
+- Do: Touch controls, safe insets, mobile HUD layout, real-phone tests.
+- Done when: a full mission plays on a phone with touch only. Verify: A15.
+
+### T27 — Authority and abuse tests
+- Depends on: T14 T20. Reuses: old T21.
+- Do: Bad payloads, spam, stale epoch, building/repair/purchase abuse, teleport-then-shoot.
+- Done when: no unauthorized damage, Gold, credits or builds; no server exception. Verify: A07 A08 A09.
+
+### T28 — Performance and lifecycle tests
+- Depends on: T24. Reuses: old T22.
+- Do: Full 5-player mission at the enemy cap; repeated missions; disconnect/rejoin; memory trend.
+- Done when: A10–A12 met with evidence. Verify: A10 A11 A12.
+
+### T29 — Verify public release
+- Depends on: T27 T28. Reuses: old T24.
+- Do: Follow `08_PUBLIC_PUBLISHING.md`; non-editor accounts join, play and keep progress.
+- Done when: verified public URL recorded. Verify: A14.
+
+### T30 — Observed playtests
+- Depends on: T29. Reuses: old T25.
+- Do: Watch first-time players; record understanding and replay honestly.
+- Done when: results recorded; small samples flagged. Verify: A13.
+
+### T31 — Handoff and evidence
+- Depends on: T30. Reuses: old T26.
+- Do: README, credits, known issues, tested version and devices.
+- Done when: deliverables match shipped behavior. Verify: A16.
+
+## Old MOBA tasks with no direct successor
+Old T09 lane lock order, T14 Arc Bolt and T15 Slip (could return as class abilities in T18), T16 phone duel (folded into T26). See `docs/archive/moba/03_TASKS.md`.

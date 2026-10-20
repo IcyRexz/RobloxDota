@@ -1,6 +1,6 @@
 # Asset register
 
-No third-party media is included in the starter. All animation IDs are placeholders.
+Every third-party or owner-supplied asset used by the game is registered here before release.
 
 Repeat per asset:
 - Logical key / file:
@@ -12,12 +12,12 @@ Repeat per asset:
 - Non-owner published-place playback verified (date/build/account role):
 - Replacement/fallback if unavailable:
 
-Required animation keys: Idle, Run, Pulse, ArcBolt, Slip, HitReact, Death, Spawn, Victory. Every key must be complete before release. A fallback prevents a crash; it does not satisfy the animation requirement.
+Animations are deferred (owner decision 2026-10-20); required animation keys will be listed here once T25 is scheduled. The MOBA-era list is in `docs/archive/moba/templates/ASSET_REGISTER.md`.
 
 ## Registered assets
 
 ### TowerModel
-- Logical key / file: `assets/TowerModel.rbxmx` (placed on both towers by `src/server/TowerVisuals.server.luau`)
+- Logical key / file: `assets/TowerModel.rbxmx` (placed on both prototype towers by `src/server/TowerVisuals.server.luau`; candidate turret art for the base-defense game)
 - Roblox asset ID / source URL: UNKNOWN — owner to confirm where it came from
 - Type: model (275 Parts, 7 MeshParts, no scripts; checked 2026-10-13)
 - Mesh asset IDs inside: 4906912683, 5992913171, 7095981688, 6571349341
@@ -26,7 +26,7 @@ Required animation keys: Idle, Run, Pulse, ArcBolt, Slip, HitReact, Death, Spawn
 - Non-owner published-place playback verified: NOT RUN (meshes must load for a non-owner account)
 - Replacement/fallback if unavailable: plain tower block (script leaves it visible if the model is missing)
 
-### Default R15 walk / idle / tool-hold animations (minions)
+### Default R15 walk / idle / tool-hold animations (minions, becoming enemies)
 - Roblox asset IDs: 507777826 (walk), 507766388 (idle), 507768375 (tool hold)
 - Creator: Roblox (default character animations), usable in any experience
 - Used by: `src/server/Minions.server.luau`
