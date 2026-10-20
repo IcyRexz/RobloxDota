@@ -16,8 +16,8 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local MAX_FLIGHT_TIME = 2 -- ignore shot messages with longer flight times
 local ORB_SIZE = 1.4
 local ORB_COLORS: { [string]: Color3 } = {
-	Blue = Color3.fromRGB(110, 170, 255),
-	Red = Color3.fromRGB(255, 110, 90),
+	[Config.Teams.Defenders] = Color3.fromRGB(255, 220, 140),
+	[Config.Teams.Zombies] = Color3.fromRGB(150, 230, 110),
 }
 
 local IDLE_COLOR = Color3.fromRGB(200, 200, 205)
@@ -31,8 +31,8 @@ local RING_HEIGHT = 0.05 -- just above the floor (floor top is y = 0)
 local DASH_COUNT = 40
 local DASH_SHARE = 0.55 -- part of each dash+gap step that is dash
 local DASH_WIDTH = 0.5
--- Until match teams exist (task T05), everyone is treated as Blue.
-local DEFAULT_TEAM = "Blue"
+-- Players are always on our side; used until the server sets the attribute.
+local DEFAULT_TEAM = Config.Teams.Defenders
 
 local player = Players.LocalPlayer
 local arena = Workspace:WaitForChild("Arena")

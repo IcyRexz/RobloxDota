@@ -1,10 +1,13 @@
 --!strict
 -- Hero health display on each player's own screen:
---  * bottom-centre HUD for your own hero: level badge (placeholder), health bar
---    with "current / max" text, xp bar (placeholder) and four skill slots with
---    cooldown covers (only the basic attack is live)
---  * over every hero's head: the player's name and a segmented health bar
---    (green your team, red the enemy), one divider per 100 health
+--  * bottom-centre HUD for your own hero: level badge, health bar with
+--    "current / max" text, xp bar under it and four skill slots with cooldown
+--    covers (only the basic attack is live). Level and xp follow the server's
+--    Level / Xp / XpToNext attributes on the Player; nothing awards xp yet, so
+--    they show LV 1 and 0 XP until that system exists.
+--  * over every other hero's head: the player's name and a segmented health bar
+--    (green your team, red the enemy), one divider per 100 health. Your own has
+--    none: the camera is first person, so it would float in your view.
 -- Both bars show a pale "recent damage" chunk that drains shortly after a hit.
 -- Display only: the server owns hero health (the Health/MaxHealth attributes).
 -- Desktop layout for now; the phone layout is decided when touch controls are built.
@@ -24,13 +27,15 @@ local DAMAGE_CHIP_COLOR = Color3.fromRGB(255, 235, 200)
 local BACK_COLOR = Color3.fromRGB(20, 20, 26)
 local PANEL_COLOR = Color3.fromRGB(14, 14, 20)
 local BADGE_STROKE = Color3.fromRGB(150, 110, 230)
+local XP_COLOR = Color3.fromRGB(150, 110, 230)
+local XP_BACK_COLOR = Color3.fromRGB(45, 38, 70)
 local CHIP_DELAY = 0.35 -- seconds before the recent-damage chunk drains
 local CHIP_DRAIN = 0.3
 local HP_PER_TICK = 100
 local BOLD = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy)
 local MEDIUM = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
--- Until match teams exist (task T05), everyone is treated as Blue.
-local DEFAULT_TEAM = "Blue"
+-- Players are always on our side; used until the server sets the attribute.
+local DEFAULT_TEAM = Config.Teams.Defenders
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -156,7 +161,7 @@ end
 -- Centre HUD (your own hero) -------------------------------------------------
 -- Bottom centre, two rows:
 --   [LV 1] [ZEUS ======= 600 / 600 ==========]
---          [-------- xp (placeholder) -------]
+--          [=========== 0 / 100 XP ==========]
 --   [ATTACK] [ 1 ] [ 2 ] [ULT]   skill slots; only the basic attack works so far
 -- Slots are buttons (HeroControls.client sends the attack when the Attack slot
 -- is pressed), ready for touch later.
@@ -183,7 +188,7 @@ panel.Parent = screen
 -- Row 1: level badge and health bar.
 local badge = Instance.new("Frame")
 badge.Name = "LevelBadge"
-badge.Size = UDim2.fromOffset(64, 46)
+badge.Size = UDim2.fromOffset(64, 52)
 badge.BackgroundColor3 = PANEL_COLOR
 badge.BackgroundTransparency = 0.1
 badge.Parent = panel
@@ -193,7 +198,7 @@ badgeStroke.Color = BADGE_STROKE
 badgeStroke.Thickness = 2.5
 badgeStroke.Parent = badge
 local levelText = newText(badge, BOLD, 20)
-levelText.Text = "LV 1" -- placeholder: levels are not in scope yet
+levelText.Text = "LV 1"
 
 local hudBar = buildBar(panel, 8, false)
 hudBar.back.Position = UDim2.fromOffset(74, 0)
@@ -207,14 +212,56 @@ heroNameText.Position = UDim2.fromOffset(10, 0)
 heroNameText.Size = UDim2.new(0, 100, 1, 0)
 heroNameText.ZIndex = 3
 
+-- XP bar directly under the health bar: purple fill on a dim purple track
+-- (no black outline), "xp / next XP" text on top.
 local xpBack = Instance.new("Frame")
-xpBack.Name = "XpBar" -- placeholder: experience is not in scope yet
-xpBack.Position = UDim2.fromOffset(74, 39)
-xpBack.Size = UDim2.new(1, -74, 0, 6)
-xpBack.BackgroundColor3 = BACK_COLOR
+xpBack.Name = "XpBar"
+xpBack.Position = UDim2.fromOffset(74, 38)
+xpBack.Size = UDim2.new(1, -74, 0, 14)
+xpBack.BackgroundColor3 = XP_BACK_COLOR
 xpBack.BorderSizePixel = 0
+xpBack.ClipsDescendants = true
 xpBack.Parent = panel
-corner(xpBack, 3)
+corner(xpBack, 5)
+
+local xpFill = Instance.new("Frame")
+xpFill.Name = "Fill"
+xpFill.BackgroundColor3 = XP_COLOR
+xpFill.BorderSizePixel = 0
+xpFill.Size = UDim2.fromScale(0, 1)
+xpFill.Parent = xpBack
+corner(xpFill, 5)
+local xpShine = Instance.new("UIGradient")
+xpShine.Rotation = 90
+xpShine.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(170, 170, 170))
+xpShine.Parent = xpFill
+
+local xpText = newText(xpBack, BOLD, 11)
+xpText.ZIndex = 3
+
+local function readWholeNumber(name: string): number?
+	local value = player:GetAttribute(name)
+	if type(value) ~= "number" or value ~= value or value < 0 or value > 1e9 then
+		return nil
+	end
+	return math.floor(value)
+end
+
+local function refreshXp()
+	local level = readWholeNumber("Level") or 1
+	local xp = readWholeNumber("Xp") or 0
+	local toNext = readWholeNumber("XpToNext")
+	levelText.Text = `LV {math.max(level, 1)}`
+	if toNext and toNext > 0 then
+		xpFill.Size = UDim2.fromScale(math.clamp(xp / toNext, 0, 1), 1)
+		xpText.Text = `{xp} / {toNext} XP`
+	else
+		xpFill.Size = UDim2.fromScale(0, 1)
+		xpText.Text = `{xp} XP`
+	end
+end
+refreshXp()
+player.AttributeChanged:Connect(refreshXp)
 
 -- Row 2: skill slots.
 local slotRow = Instance.new("Frame")
@@ -331,18 +378,18 @@ local function watchOwnHero(character: Model)
 	end)
 end
 
--- Overhead bars (every hero) --------------------------------------------------
--- Your own is always shown; others within Config.Display.HealthBarRange of your hero.
+-- Overhead bars (other heroes) ------------------------------------------------
+-- Shown within Config.Display.HealthBarRange of your hero.
 
-type Overhead = { billboard: BillboardGui, character: Model, isOwn: boolean, alive: boolean }
+type Overhead = { billboard: BillboardGui, character: Model, alive: boolean }
 local overheads: { [Model]: Overhead } = {}
 
 local function updateOverheadVisibility(overhead: Overhead)
 	local own = player.Character
 	local ownRoot = own and own:FindFirstChild("HumanoidRootPart")
 	local root = overhead.character:FindFirstChild("HumanoidRootPart")
-	local near = overhead.isOwn
-	if not near and ownRoot and ownRoot:IsA("BasePart") and root and root:IsA("BasePart") then
+	local near = false
+	if ownRoot and ownRoot:IsA("BasePart") and root and root:IsA("BasePart") then
 		local offset = root.Position - ownRoot.Position
 		near = Vector3.new(offset.X, 0, offset.Z).Magnitude <= Config.Display.HealthBarRange
 	end
@@ -362,7 +409,7 @@ local function addOverhead(owner: Player, character: Model)
 	billboard.Size = UDim2.fromOffset(120, 30)
 	billboard.StudsOffset = Vector3.new(0, 2.8, 0)
 	billboard.LightInfluence = 0
-	local overhead: Overhead = { billboard = billboard, character = character, isOwn = owner == player, alive = false }
+	local overhead: Overhead = { billboard = billboard, character = character, alive = false }
 	overheads[character] = overhead
 
 	local nameLabel = newText(billboard, MEDIUM, 13)
@@ -398,8 +445,9 @@ local function onPlayer(owner: Player)
 	local function onCharacter(character: Model)
 		if owner == player then
 			watchOwnHero(character)
+		else
+			addOverhead(owner, character)
 		end
-		addOverhead(owner, character)
 	end
 	owner.CharacterAdded:Connect(onCharacter)
 	if owner.Character then

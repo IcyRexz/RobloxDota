@@ -3,12 +3,16 @@
 -- The plain block stays the real tower (hitbox, health, name label);
 -- the model is decoration only, so it never blocks hits or line of sight.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
+local Config = require(ReplicatedStorage.Shared.Config)
+
+-- Khaki for our side, zombie green for theirs (no colour teams).
 local TEAM_COLORS: { [string]: Color3 } = {
-	Blue = Color3.new(0.2, 0.45, 0.9),
-	Red = Color3.new(0.85, 0.2, 0.2),
+	[Config.Teams.Defenders] = Color3.fromRGB(158, 140, 100),
+	[Config.Teams.Zombies] = Color3.fromRGB(72, 98, 52),
 }
 -- The knight's body parts are the MeshParts directly inside the model; everything
 -- else (stone, pillars) keeps its original color. The sword stays grey too.

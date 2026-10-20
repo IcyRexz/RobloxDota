@@ -1,12 +1,16 @@
 --!strict
 -- Spawns unit waves and moves them as a swarm across the open battlefield.
--- Our minions (Blue) come out of each standing inhibitor and head for the
--- zombie cores; zombies (team "Red") come out of each standing zombie core and
+-- Our minions (team Defenders) come out of each standing inhibitor and head for the
+-- zombie cores; zombies (team Zombies) come out of each standing zombie core and
 -- head for our Base Core. There are no lanes or routes: every unit follows a
 -- shared flow field (SwarmField) around walls and structures, spreads out
 -- from its neighbours (separation) and drifts a little (wander), so the horde
 -- fans out over open ground and squeezes through the base openings. Each
 -- zombie picks one of the base openings at spawn, nearer ones more likely.
+-- A unit walking at an enemy goes straight only while the line is open on the
+-- flow-field grid; otherwise it follows a short detour around the obstacle.
+-- A unit that stops making progress gets a few seconds of pure flow/detour
+-- steering (no drift or crowd push) to free itself.
 -- Also: fighting enemy units, heroes and structures, dying, despawning, and
 -- the inhibitor (barracks) bonus.
 
@@ -30,16 +34,27 @@ local TICK_SECONDS = 0.2
 local HOLD_SLACK = 1.5
 -- Swarm steering (studs and weights; tune by eye in Studio).
 local SPAWN_SCATTER = 7 -- units appear anywhere within this radius of their spawn marker
-local SEPARATION_RADIUS = 3.5 -- neighbours closer than this push each other apart
+local SEPARATION_RADIUS = 4.5 -- neighbours closer than this push each other apart
 local SEPARATION_WEIGHT = 1.4
 local WANDER_WEIGHT = 0.45 -- sideways drift, so units fan out instead of queueing
 local WANDER_CHANGE = 0.25 -- how fast each unit's drift changes per tick
 local STEER_AHEAD = 6 -- studs ahead each MoveTo aims
 local OVERLAP_NUDGE = 1.2 -- a unit standing still is nudged apart if neighbours overlap it
+local DETOUR_REFRESH = 1 -- seconds a detour waypoint is reused before searching again
+local DETOUR_SEARCHES_PER_TICK = 6 -- across all units; the rest reuse their last waypoint
+local STUCK_CHECK = 1 -- seconds of walking between progress checks
+local STUCK_DISTANCE = 1 -- studs a walking unit must cover per check, or it counts as stuck
+local UNSTICK_TIME = 2.5 -- seconds of plain steering once stuck
+-- Zombies keep their current target unless something else is this many studs nearer.
+local ZOMBIE_SWITCH_SLACK = 2
 local COLLISION_GROUP = "Minions" -- minions pass through each other instead of shoving
 
+local DEFENDERS = Config.Teams.Defenders
+local ZOMBIES = Config.Teams.Zombies
+
+-- Our minions wear khaki (zombies have their own look below).
 local TEAM_COLORS: { [string]: Color3 } = {
-	Blue = Color3.new(0.2, 0.45, 0.9),
+	[DEFENDERS] = Color3.fromRGB(158, 140, 100),
 }
 -- Zombies: dark green skin, blood-red shirt, muddy legs, glowing red eyes.
 local ZOMBIE_SKIN = Color3.fromRGB(78, 104, 58)
@@ -77,6 +92,12 @@ type Minion = {
 	attacker: Instance?,
 	holding: boolean,
 	nextAttackAt: number,
+	detour: Vector3?, -- current waypoint around an obstacle toward its enemy
+	detourAt: number, -- when that waypoint was found
+	progressFrom: Vector3, -- where the last stuck check started
+	progressAt: number,
+	unstickUntil: number, -- plain steering until then (see updateMinion)
+	lastTarget: Instance?, -- zombies: what it went for last tick
 }
 
 local arena = Workspace:WaitForChild("Arena")
@@ -343,14 +364,14 @@ for _, opening in openings do
 		end
 	end
 	local name = "ToBaseVia" .. opening.Name
-	SwarmField.define(name, { goals = standingCores("Blue"), closed = others })
+	SwarmField.define(name, { goals = standingCores(DEFENDERS), closed = others })
 	table.insert(zombieFields, name)
 end
 if #zombieFields == 0 then -- a map without marked openings: one field straight to the core
-	SwarmField.define("ToBase", { goals = standingCores("Blue"), closed = {} })
+	SwarmField.define("ToBase", { goals = standingCores(DEFENDERS), closed = {} })
 	table.insert(zombieFields, "ToBase")
 end
-SwarmField.define("ToZombies", { goals = standingCores("Red"), closed = {} })
+SwarmField.define("ToZombies", { goals = standingCores(ZOMBIES), closed = {} })
 
 -- A fallen structure frees the ground it stood on (and may remove a goal).
 local STRUCTURE_KINDS = { Tower = true, Barracks = true, Core = true }
@@ -363,7 +384,7 @@ end)
 -- Which field a new unit follows. Zombies pick an opening at random, weighted
 -- toward shorter walks (1 / distance^2), so both spawn cores feed both openings.
 local function pickField(team: string, start: Vector3): string
-	if team ~= "Red" then
+	if team ~= ZOMBIES then
 		return "ToZombies"
 	end
 	local total = 0
@@ -415,7 +436,7 @@ local function spawnMinion(spawnPoint: SpawnPoint, baseStats: MinionStats)
 	local team = spawnPoint.team
 	local marker = spawnPoint.marker
 	local stats = scaledStats(baseStats, strengthOf(team))
-	local direction = if team == "Blue" then 1 else -1
+	local direction = if team == DEFENDERS then 1 else -1
 	local angle, radius = math.random() * 2 * math.pi, math.sqrt(math.random()) * SPAWN_SCATTER
 	local start = marker.Position + Vector3.new(math.cos(angle) * radius, 3, math.sin(angle) * radius)
 	local facing = start + Vector3.new(direction, 0, 0)
@@ -446,6 +467,12 @@ local function spawnMinion(spawnPoint: SpawnPoint, baseStats: MinionStats)
 		attacker = nil,
 		holding = false,
 		nextAttackAt = 0,
+		detour = nil,
+		detourAt = -math.huge,
+		progressFrom = start,
+		progressAt = os.clock(),
+		unstickUntil = 0,
+		lastTarget = nil,
 	}
 	minion.turn.CFrame = root.CFrame.Rotation
 	minion.idleTrack:Play()
@@ -464,9 +491,9 @@ local longestWave = 0
 for _, wave in MinionConfig.Waves do
 	longestWave = math.max(longestWave, #wave)
 end
-local firstTeam = "Blue"
+local firstTeam = DEFENDERS
 local function spawnWave()
-	local order: { string } = if firstTeam == "Blue" then { "Blue", "Red" } else { "Red", "Blue" }
+	local order: { string } = if firstTeam == DEFENDERS then { DEFENDERS, ZOMBIES } else { ZOMBIES, DEFENDERS }
 	firstTeam = order[2]
 	for index = 1, longestWave do
 		for _, team in order do
@@ -508,6 +535,9 @@ local function targetPoint(target: Instance, from: Vector3): Vector3?
 end
 
 local function drawAggro(minion: Minion, attacker: Instance)
+	if minion.team == ZOMBIES then
+		return -- zombies only ever go for what is nearest (see nearestForZombie)
+	end
 	minion.attacker = attacker
 	minion.structure = nil -- fighting back beats a structure lock
 end
@@ -570,7 +600,61 @@ local function canHitStructure(minion: Minion, structure: BasePart): boolean
 		and not CombatService.isLocked(structure)
 end
 
--- What this minion fights, and the point it walks to and faces:
+-- Zombies (owner 2026-10-20): simply the nearest enemy within aggro range,
+-- unit, player or attackable structure alike, measured to a structure's side.
+-- No retaliation chase and no structure lock: hitting a zombie does not make
+-- it follow you. The current target is kept unless another is clearly nearer.
+local function nearestForZombie(minion: Minion): (Instance?, Vector3)
+	local position = minion.root.Position
+	local best: Instance? = nil
+	local bestPoint = position
+	local bestDistance = minion.stats.aggroRange
+	local keptPoint: Vector3? = nil
+	local keptDistance = math.huge
+	local function consider(candidate: Instance, point: Vector3)
+		local distance = planarDistance(point, position)
+		if candidate == minion.lastTarget and distance <= minion.stats.aggroRange then
+			keptPoint, keptDistance = point, distance
+		end
+		if distance <= bestDistance then
+			best, bestPoint, bestDistance = candidate, point, distance
+		end
+	end
+	for _, other in alive do
+		if other.team ~= minion.team and CombatService.isAlive(other.model) then
+			consider(other.model, other.root.Position)
+		end
+	end
+	for _, player in Players:GetPlayers() do
+		local hero = player.Character
+		local heroRoot = hero and hero:FindFirstChild("HumanoidRootPart")
+		if
+			hero
+			and heroRoot
+			and heroRoot:IsA("BasePart")
+			and hero:GetAttribute("Kind") == "Hero"
+			and typeof(hero:GetAttribute("Team")) == "string"
+			and hero:GetAttribute("Team") ~= minion.team
+			and CombatService.isAlive(hero)
+		then
+			consider(hero, heroRoot.Position)
+		end
+	end
+	for _, structure in structures do
+		if canHitStructure(minion, structure) then
+			consider(structure, closestPointOn(structure, position))
+		end
+	end
+	local kept = minion.lastTarget
+	if kept and keptPoint and keptDistance <= bestDistance + ZOMBIE_SWITCH_SLACK then
+		return kept, keptPoint
+	end
+	minion.lastTarget = best
+	return best, bestPoint
+end
+
+-- What this minion fights, and the point it walks to and faces (zombies use
+-- nearestForZombie instead):
 --  0. an enemy that drew its aggro (see the Damaged handler: whoever hit it or
 --     a nearby ally, including towers), while within RetaliateRange: it drops
 --     whatever it was doing, even a structure
@@ -580,6 +664,9 @@ end
 --  4. the nearest enemy structure within aggro range that can take damage
 -- Locked structures are walked past.
 local function chooseTarget(minion: Minion): (Instance?, Vector3)
+	if minion.team == ZOMBIES then
+		return nearestForZombie(minion)
+	end
 	local position = minion.root.Position
 	local attacker = minion.attacker
 	if attacker and CombatService.isAlive(attacker) and not CombatService.isLocked(attacker) then
@@ -733,24 +820,73 @@ end
 -- Where the swarm wants this unit to go when it has no enemy: downhill on its
 -- flow field, bent sideways by its own slowly changing drift, and pushed apart
 -- from its neighbours. Nil when it has arrived (or has no goal left).
-local function swarmStep(minion: Minion, push: Vector3): Vector3?
+local function swarmStep(minion: Minion, push: Vector3, unsticking: boolean): Vector3?
 	local position = minion.root.Position
 	local flow = SwarmField.direction(minion.field, position)
 	if not flow then
 		return nil
 	end
+	local plain = position + flow * STEER_AHEAD
+	if unsticking then
+		return plain
+	end
 	minion.wander = math.clamp(minion.wander + (math.random() * 2 - 1) * WANDER_CHANGE, -1, 1)
 	local sideways = Vector3.new(-flow.Z, 0, flow.X)
 	local steer = flow + sideways * minion.wander * WANDER_WEIGHT + push * SEPARATION_WEIGHT
 	if steer.Magnitude < 0.05 then
-		steer = flow
+		return plain
 	end
-	return position + steer.Unit * STEER_AHEAD
+	local bent = position + steer.Unit * STEER_AHEAD
+	-- Drift or crowding must never steer a unit into a wall or structure.
+	return if SwarmField.clearLine(position, bent) then bent else plain
+end
+
+-- Detour searches left this tick (reset in updateAll), so a crowd hitting an
+-- obstacle at once spreads its searches over several ticks.
+local detourBudget = DETOUR_SEARCHES_PER_TICK
+
+-- Direction to walk toward an enemy at aimPoint: straight while the line is
+-- open, else toward a detour waypoint around the obstacle (refreshed now and
+-- then). Falls back to straight if no detour is found.
+local function approachDirection(minion: Minion, aimPoint: Vector3, now: number, unsticking: boolean): Vector3
+	local position = minion.root.Position
+	local goal = aimPoint
+	if unsticking or not SwarmField.clearLine(position, aimPoint) then
+		local stale = not minion.detour or now - minion.detourAt >= DETOUR_REFRESH
+		if stale and detourBudget > 0 then
+			detourBudget -= 1
+			minion.detour = SwarmField.waypointToward(position, aimPoint)
+			minion.detourAt = now
+		end
+		goal = minion.detour or aimPoint
+	else
+		minion.detour = nil
+	end
+	local toward = Vector3.new(goal.X - position.X, 0, goal.Z - position.Z)
+	return if toward.Magnitude > 0.05 then toward.Unit else Vector3.zero
+end
+
+-- Stuck check: a unit that keeps trying to walk but covers less than
+-- STUCK_DISTANCE in STUCK_CHECK seconds steers plainly for UNSTICK_TIME.
+local function trackProgress(minion: Minion, walking: boolean, now: number)
+	local position = minion.root.Position
+	if not walking then
+		minion.progressFrom, minion.progressAt = position, now
+		return
+	end
+	if now - minion.progressAt >= STUCK_CHECK then
+		if planarDistance(position, minion.progressFrom) < STUCK_DISTANCE and now >= minion.unstickUntil then
+			minion.unstickUntil = now + UNSTICK_TIME
+			minion.detour = nil
+		end
+		minion.progressFrom, minion.progressAt = position, now
+	end
 end
 
 local function updateMinion(minion: Minion, now: number)
 	local position = minion.root.Position
-	local push = separation(minion)
+	local unsticking = now < minion.unstickUntil
+	local push = if unsticking then Vector3.zero else separation(minion)
 	local enemy, aimPoint = chooseTarget(minion)
 	local target: Vector3? = nil
 	if enemy then
@@ -761,9 +897,9 @@ local function updateMinion(minion: Minion, now: number)
 		if not minion.holding then
 			-- Approach while spreading out, so a crowd surrounds the target
 			-- instead of piling onto one spot.
-			local toward = Vector3.new(aimPoint.X - position.X, 0, aimPoint.Z - position.Z)
-			local steer = (if toward.Magnitude > 0.05 then toward.Unit else Vector3.zero) + push * SEPARATION_WEIGHT
-			target = if steer.Magnitude > 0.05 then position + steer.Unit * math.min(STEER_AHEAD, toward.Magnitude) else aimPoint
+			local distance = planarDistance(aimPoint, position)
+			local steer = approachDirection(minion, aimPoint, now, unsticking) + push * SEPARATION_WEIGHT
+			target = if steer.Magnitude > 0.05 then position + steer.Unit * math.min(STEER_AHEAD, distance) else aimPoint
 		else
 			if now >= minion.nextAttackAt then
 				attack(minion, enemy, aimPoint, now)
@@ -772,12 +908,14 @@ local function updateMinion(minion: Minion, now: number)
 			if push.Magnitude > 0.5 then
 				minion.humanoid:MoveTo(position + push.Unit * OVERLAP_NUDGE)
 				setWalking(minion, false)
+				trackProgress(minion, false, now)
 				return
 			end
 		end
 	else
 		minion.holding = false
-		target = swarmStep(minion, push)
+		minion.detour = nil
+		target = swarmStep(minion, push, unsticking)
 	end
 
 	if target then
@@ -789,10 +927,12 @@ local function updateMinion(minion: Minion, now: number)
 		minion.humanoid:MoveTo(position)
 	end
 	setWalking(minion, target ~= nil)
+	trackProgress(minion, target ~= nil, now)
 end
 
 local function updateAll()
 	local now = os.clock()
+	detourBudget = DETOUR_SEARCHES_PER_TICK
 	for i = #alive, 1, -1 do
 		local minion = alive[i]
 		-- Dead (health 0), expired or removed some other way.

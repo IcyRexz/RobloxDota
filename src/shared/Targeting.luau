@@ -56,9 +56,38 @@ function Targeting.isLocked(target: Instance, isAlive: (Instance) -> boolean): b
 	return true
 end
 
--- Nothing solid between two points. Units (minions, characters) never block.
+-- Things attacks pass through (owner decisions 2026-10-20): hills (Terrain) and
+-- fences. Fence collision parts block walking, and Roblox always lets raycasts
+-- hit a part that collides (CanQuery only works with CanCollide off), so they
+-- are excluded here by their Kind attribute. The fence list is read once from the map.
+local fences: { Instance }? = nil
+function Targeting.seeThrough(): { Instance }
+	local list: { Instance } = { Workspace.Terrain }
+	if not fences then
+		local arena = Workspace:FindFirstChild("Arena")
+		if arena then
+			local found: { Instance } = {}
+			for _, item in arena:GetDescendants() do
+				if item:IsA("BasePart") and item:GetAttribute("Kind") == "Fence" then
+					table.insert(found, item)
+				end
+			end
+			fences = found
+		end
+	end
+	if fences then
+		for _, fence in fences do
+			table.insert(list, fence)
+		end
+	end
+	return list
+end
+
+-- Nothing solid between two points. Units (minions, characters), hills and
+-- fences never block.
 function Targeting.hasLineOfSight(target: Instance, from: Vector3, to: Vector3): boolean
-	local ignore: { Instance } = { target }
+	local ignore = Targeting.seeThrough()
+	table.insert(ignore, target)
 	local minions = Workspace:FindFirstChild("Minions")
 	if minions then
 		table.insert(ignore, minions)

@@ -21,7 +21,7 @@ The players and their side are a modern military force (soldiers, guns, turrets,
 - **Hub and mission arena live in one place** (one server holds the hub and the mission). Separate places with teleports may come later.
 - **No schedule.** The 7-day target and 14-day cap are dropped. The owner chooses the next change one at a time.
 - **Animations later.** A custom animation set is deferred; the owner will decide what is needed afterwards.
-- **Camera:** keep the current fixed elevated follow camera (base at the bottom of the screen, enemies arriving from the top).
+- **Camera:** first person with a centre crosshair (owner decision 2026-10-20, replacing the fixed elevated follow camera); a fixed-orientation minimap shows the base at the bottom and enemies arriving from the top.
 
 ## Required for the complete launch
 - One public Roblox experience and working start link.

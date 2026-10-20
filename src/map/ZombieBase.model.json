@@ -25,7 +25,7 @@
       },
       "attributes": {
         "EntityId": "LeftZombieCore",
-        "Team": "Red",
+        "Team": "Zombies",
         "Kind": "Core",
         "MaxHealth": 1200,
         "Health": 1200
@@ -52,7 +52,7 @@
         ]
       },
       "attributes": {
-        "Team": "Red",
+        "Team": "Zombies",
         "Kind": "MinionSpawn",
         "Source": "LeftZombieCore"
       }
@@ -81,7 +81,7 @@
       },
       "attributes": {
         "EntityId": "RightZombieCore",
-        "Team": "Red",
+        "Team": "Zombies",
         "Kind": "Core",
         "MaxHealth": 1200,
         "Health": 1200
@@ -108,7 +108,7 @@
         ]
       },
       "attributes": {
-        "Team": "Red",
+        "Team": "Zombies",
         "Kind": "MinionSpawn",
         "Source": "RightZombieCore"
       }

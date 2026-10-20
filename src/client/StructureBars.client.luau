@@ -20,8 +20,8 @@ local NAME_HEIGHT = 18
 local HP_PER_TICK = 100 -- one divider line per 100 health, like MOBA bars
 local STRUCTURE_KINDS = { Tower = true, Barracks = true, Core = true }
 local VISIBILITY_CHECK_SECONDS = 0.2
--- Until match teams exist (task T05), everyone is treated as Blue.
-local DEFAULT_TEAM = "Blue"
+-- Players are always on our side; used until the server sets the attribute.
+local DEFAULT_TEAM = Config.Teams.Defenders
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -94,7 +94,7 @@ local function createBar(structure: BasePart)
 
 	local nameLabel = newText("Name", 14)
 	nameLabel.Size = UDim2.new(1, 0, 0, NAME_HEIGHT)
-	nameLabel.Text = structure.Name:gsub("(%l)(%u)", "%1 %2") -- "RedTower" -> "Red Tower"
+	nameLabel.Text = structure.Name:gsub("(%l)(%u)", "%1 %2") -- "LeftTower" -> "Left Tower"
 	nameLabel.Parent = billboard
 
 	local back = Instance.new("Frame")

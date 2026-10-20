@@ -26,6 +26,15 @@ Animations are deferred (owner decision 2026-10-20); required animation keys wil
 - Non-owner published-place playback verified: NOT RUN (meshes must load for a non-owner account)
 - Replacement/fallback if unavailable: plain tower block (script leaves it visible if the model is missing)
 
+### FenceModel
+- Logical key / file: `assets/FenceModel.rbxmx` (tiled along every base fence segment by `src/server/FenceVisuals.server.luau`)
+- Roblox asset ID / source URL: UNKNOWN — owner to confirm (made in Studio or from the Toolbox?)
+- Type: one UnionOperation, 64.6 × 12.4 × 2.4 studs, no scripts (checked 2026-10-20)
+- Creator and owning account/group: UNKNOWN
+- Permission/license and attribution required: UNKNOWN
+- Non-owner published-place playback verified: NOT RUN
+- Replacement/fallback if unavailable: wooden placeholder posts and rails built by the same script
+
 ### Default R15 walk / idle / tool-hold animations (minions, becoming enemies)
 - Roblox asset IDs: 507777826 (walk), 507766388 (idle), 507768375 (tool hold)
 - Creator: Roblox (default character animations), usable in any experience

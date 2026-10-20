@@ -1,15 +1,20 @@
 --!strict
 -- Mobile Legends-style announcement banner, centred near the top of the screen:
--- a team-colored strip (the color of the team that scored) that fades out at
--- the sides, with bold white text, e.g.
---   THE RED TEAM HAS LOST THEIR INHIBITOR
---       BLUE MINIONS ARE NOW STRONGER
+-- a strip in the colour of the side that scored (khaki us, green zombies) that
+-- fades out at the sides, with bold white text, e.g.
+--   ZOMBIES LOST A CORE
+--       ENEMY CORE DESTROYED
 -- Banners queue, so two quick kills show one after another.
 -- Display only: the server decides when a structure is destroyed.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+
+local DEFENDERS = Config.Teams.Defenders
+local ZOMBIES = Config.Teams.Zombies
 
 local SHOW_SECONDS = 3
 local SLIDE_IN_SECONDS = 0.25
@@ -18,20 +23,20 @@ local START_WIDTH_SCALE = 0.6 -- the strip opens out sideways from the middle
 
 -- Strip colors (the scoring team) and the brighter text tint for team names.
 local TEAM_STRIP_COLORS: { [string]: Color3 } = {
-	Blue = Color3.fromRGB(30, 90, 200),
-	Red = Color3.fromRGB(190, 35, 35),
+	[DEFENDERS] = Color3.fromRGB(120, 105, 60),
+	[ZOMBIES] = Color3.fromRGB(50, 95, 35),
 }
 local TEAM_TEXT_COLORS: { [string]: Color3 } = {
-	Blue = Color3.fromRGB(140, 190, 255),
-	Red = Color3.fromRGB(255, 130, 120),
+	[DEFENDERS] = Color3.fromRGB(240, 225, 170),
+	[ZOMBIES] = Color3.fromRGB(170, 235, 140),
 }
 local NEUTRAL_STRIP = Color3.fromRGB(40, 40, 48)
 local BOLD_FONT = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy)
 local MEDIUM_FONT = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
 -- The map calls it Barracks; players know it as the inhibitor.
 local DISPLAY_NAMES: { [string]: string } = { Tower = "Tower", Barracks = "Inhibitor", Core = "Core" }
--- Until match teams exist (task T05), everyone is treated as Blue.
-local DEFAULT_TEAM = "Blue"
+-- Players are always on our side; used until the server sets the attribute.
+local DEFAULT_TEAM = Config.Teams.Defenders
 
 local player = Players.LocalPlayer
 local destroyedEvent = ReplicatedStorage:WaitForChild("StructureDestroyed") :: RemoteEvent
@@ -41,9 +46,9 @@ local function localTeam(): string
 	return if type(team) == "string" then team else DEFAULT_TEAM
 end
 
--- How each side is named on banners. The zombies use team id "Red" in code.
-local TEAM_LABELS: { [string]: string } = { Blue = "BLUE TEAM", Red = "ZOMBIES" }
-local UNIT_LABELS: { [string]: string } = { Blue = "BLUE MINIONS", Red = "ZOMBIES" }
+-- How each side is named on banners.
+local TEAM_LABELS: { [string]: string } = { [DEFENDERS] = "WE", [ZOMBIES] = "ZOMBIES" }
+local UNIT_LABELS: { [string]: string } = { [DEFENDERS] = "OUR MINIONS", [ZOMBIES] = "ZOMBIES" }
 
 local function tinted(team: string, text: string): string
 	local color = TEAM_TEXT_COLORS[team] or Color3.new(1, 1, 1)

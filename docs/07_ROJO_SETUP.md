@@ -15,7 +15,7 @@ Open the place in Studio and connect the Rojo plugin (default port 34872). `buil
 - `src/client` -> StarterPlayer.StarterPlayerScripts.Client.
 - `src/map` -> Workspace.Arena (graybox map as `.model.json`).
 - `assets` -> ServerStorage.Assets (owner-saved models such as `TowerModel.rbxmx`).
-- StarterPlayer properties: shift lock off, jump power 0.
+- StarterPlayer properties: shift lock off, first-person camera, jump power 50 (Roblox default, set explicitly so a synced place that had 0 is reset).
 - Remotes are created at runtime by the server scripts that own them.
 
 The original starter-pack scaffold (bootstraps, Protocol, Smoke test) was never imported (owner decision 2026-10-12); files are written one at a time.

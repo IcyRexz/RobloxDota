@@ -6,7 +6,7 @@ All checks start **NOT RUN**. Record results in `templates/TEST_LOG.md` with bui
 Build/sync into a fresh place; start a server with two clients. No script errors; expected service tree; one copy of each controller.
 
 ## A02 — Map and movement (P0)
-Players spawn inside the compound, reach every build node and cannot leave the map, jump onto walls or the core, or spawn inside geometry. Enemies always have a path to the core. The camera shows incoming waves without manual adjustment.
+Players spawn inside the compound, reach every build node and cannot leave the map, jump over fences or onto the core, or spawn inside geometry. Enemies always have a path to the core. Incoming waves are visible in first person and on the minimap.
 
 ## A03 — Hub and mission flow (P0)
 Solo and party (2 and 5 players) can start from the hub. Leaving during Briefing cancels it. Leaving mid-mission keeps the others playing; last player leaving resets. Results return everyone to the hub. Three missions in a row start clean (no leftover Gold, pieces, enemies or cooldowns).

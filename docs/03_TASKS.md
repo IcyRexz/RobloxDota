@@ -21,13 +21,13 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 - Do: Walled compound with Base Core in the bottom half, gates, player spawn, pre-placed build nodes; open ground in the top half; enemy spawn markers along the top; enemy path waypoints. Keep the map closed so players cannot escape.
 - Done when: players spawn in the compound, can reach every node, cannot leave the map; enemies have a valid path to the core. Verify: A02.
 - Follow-ups kept for later (owner 2026-10-20, not to implement yet):
-  - **T03a — Natural map edges:** replace the temporary invisible boundary with irregular terrain edges, cliffs, mountains or dense forest, kept well away from the combat area.
-  - **T03b — Battlefield variety:** occasional rocks, ruins or terrain features that the swarm flows around, never forming corridors or permanent lanes.
+  - **T03a — Natural map edges:** (placeholder forest belt done 2026-10-20) replace the temporary invisible boundary with irregular terrain edges, cliffs, mountains or dense forest, kept well away from the combat area.
+  - **T03b — Battlefield variety:** (placeholder hills, trees and rocks done 2026-10-20) occasional rocks, ruins or terrain features that the swarm flows around, never forming corridors or permanent lanes.
 
 ### T04 — Camera and desktop movement
-- Depends on: T03. Reuses: `HeroCamera.client.luau` (kept as is), old T04.
-- Do: Keep the fixed follow camera; WASD movement; no jump/climb/swim.
-- Done when: camera shows enough of the top half to see incoming waves. Verify: A02.
+- Depends on: T03. Reuses: old T04.
+- Do: first-person camera (`CameraMode = LockFirstPerson`, owner decision 2026-10-20; `HeroCamera.client.luau` removed) with crosshair (`Crosshair.client.luau`); WASD movement; jump allowed (owner 2026-10-20); no climb/swim; minimap (`Minimap.client.luau`).
+- Done when: players can see incoming waves with the camera and on the minimap. Verify: A02.
 
 ### T05 — Mission flow and party membership
 - Depends on: T03. Reuses: `PlayerTeams.server.luau` (single defender team), old T05.
@@ -125,7 +125,7 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 
 ### T23 — HUD and onboarding
 - Depends on: T11 T15. Reuses: `HeroHud.client.luau`, `Announcements.client.luau`, old T19.
-- Do: Gold, wave/phase timer, core bar, ammo, class/level badge; first-mission hints.
+- Do: Gold, wave/phase timer, core bar, ammo, class badge; first-mission hints. (XP bar, level badge wiring and minimap done 2026-10-20.)
 - Done when: a new player understands the goal and how to build without coaching. Verify: A13.
 
 ### T24 — Combat feedback
@@ -170,8 +170,8 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 ### T32 — Re-theme to soldiers vs zombies
 - Depends on: owner picks each item (theme decided 2026-10-20; brief "Theme").
 - Do, one item at a time, art and names only (systems stay):
-  - Blue melee minion -> soldier (e.g. bayonet rifle or riot shield) instead of sword.
-  - Blue archer minion -> rifleman: rifle instead of bow, tracer instead of arrow (same shot code: aim, travel, damage on arrival).
+  - Our melee minion -> soldier (e.g. bayonet rifle or riot shield) instead of sword.
+  - Our archer minion -> rifleman: rifle instead of bow, tracer instead of arrow (same shot code: aim, travel, damage on arrival).
   - Tower knight model (`assets/TowerModel.rbxmx`) -> turret or bunker art.
   - Inhibitors -> barracks or supply depots (display names, look).
   - Base Core and zombie cores -> military command post and zombie nests/hives (look, names).

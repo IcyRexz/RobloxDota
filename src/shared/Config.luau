@@ -14,13 +14,13 @@ export type MinionStats = {
 	aggroRange: number, -- notices and attacks enemies this close (studs)
 }
 
--- Our minions: +20% health and attack over the zombie baseline, and a wide
--- aggro range so they engage zombies they pass instead of walking by them
--- (owner decision 2026-10-20).
+-- Our minions: +20% health and attack over the zombie baseline, then another
+-- +20% on top (owner 2026-10-20, after the size change), and a wide aggro range
+-- so they engage zombies they pass instead of walking by them.
 local MELEE: MinionStats = table.freeze({
 	kind = "Melee",
-	maxHealth = 144, -- was 120
-	damage = 14, -- was 12 (+20% = 14.4, rounded)
+	maxHealth = 173, -- was 144 (+20%, rounded)
+	damage = 17, -- was 14 (+20% = 16.8, rounded)
 	attackRange = 5,
 	attackInterval = 1,
 	speed = 8,
@@ -29,8 +29,8 @@ local MELEE: MinionStats = table.freeze({
 
 local ARCHER: MinionStats = table.freeze({
 	kind = "Archer",
-	maxHealth = 96, -- was 80
-	damage = 12, -- was 10
+	maxHealth = 115, -- was 96 (+20%, rounded)
+	damage = 14, -- was 12 (+20% = 14.4, rounded)
 	attackRange = 16,
 	attackInterval = 1,
 	speed = 8,
@@ -51,6 +51,13 @@ local ZOMBIE: MinionStats = table.freeze({
 })
 
 local Config = table.freeze({
+	-- The two sides (owner 2026-10-20): us and the zombies. These are the Team
+	-- attribute values on players, units and structures; there are no colour teams.
+	Teams = table.freeze({
+		Defenders = "Defenders",
+		Zombies = "Zombies",
+	}),
+
 	-- What players can see. Health bars show for units within HealthBarRange of
 	-- your hero; it must stay larger than Hero.Pulse.AcquireRange so you can
 	-- always see the health of anything you can target.
@@ -84,10 +91,10 @@ local Config = table.freeze({
 		Archer = ARCHER,
 		Zombie = ZOMBIE,
 		-- One wave per spawn marker: our minions come out of each standing
-		-- inhibitor, zombies ("Red") out of each standing zombie core.
+		-- inhibitor, zombies out of each standing zombie core.
 		Waves = table.freeze({
-			Blue = table.freeze({ MELEE, MELEE, MELEE, MELEE, ARCHER }),
-			Red = table.freeze(table.create(16, ZOMBIE)), -- 16 per zombie core
+			Defenders = table.freeze({ MELEE, MELEE, MELEE, MELEE, ARCHER }),
+			Zombies = table.freeze(table.create(12, ZOMBIE)), -- 12 per zombie core (was 16, owner 2026-10-20: -25%)
 		}) :: { [string]: { MinionStats } },
 		FirstWaveDelay = 5, -- seconds after match start
 		WaveInterval = 25,
@@ -108,7 +115,7 @@ local Config = table.freeze({
 		LeashReturnedDistance = 2, -- back on the path once this close to the anchor
 		-- TEMPORARY, for simulation only: extra health and damage per team, so one
 		-- side wins the push. Remove before release.
-		TestTeamBonus = table.freeze({}) :: { [string]: number }, -- e.g. { Blue = 0.2 }
+		TestTeamBonus = table.freeze({}) :: { [string]: number }, -- e.g. { Defenders = 0.2 }
 		BarracksBonus = 0.25, -- +25% health and damage after the enemy inhibitor (barracks) falls
 		-- Archer shot: draws the bow, then the arrow flies; damage lands on arrival.
 		ArcherDrawTime = 0.3,
@@ -117,7 +124,7 @@ local Config = table.freeze({
 		-- (the damage is applied then). The swing then recovers before the next hit.
 		ZombieSwipeHitDelay = 0.3,
 		TurnRate = 270, -- degrees per second; minions turn smoothly instead of snapping
-		Scale = 0.7, -- body size relative to a normal character, so heroes stand taller
+		Scale = 1, -- body size relative to a normal character (owner 2026-10-20: same height as players)
 	}),
 
 	-- Used by the structure code (T09). Map attributes must match until then.

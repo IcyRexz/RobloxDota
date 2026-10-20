@@ -40,16 +40,16 @@
           0
         ],
         "Color": [
-          0.55,
-          0.7,
-          0.95
+          0.8,
+          0.75,
+          0.6
         ],
         "Material": "SmoothPlastic",
         "Neutral": true,
         "Duration": 0
       },
       "attributes": {
-        "Team": "Blue",
+        "Team": "Defenders",
         "Kind": "Spawn"
       }
     },
@@ -69,15 +69,15 @@
           0
         ],
         "Color": [
-          0.2,
-          0.45,
-          0.9
+          0.62,
+          0.55,
+          0.39
         ],
         "Material": "SmoothPlastic"
       },
       "attributes": {
         "EntityId": "BaseCore",
-        "Team": "Blue",
+        "Team": "Defenders",
         "Kind": "Core",
         "MaxHealth": 1200,
         "Health": 1200,
@@ -85,72 +85,72 @@
       }
     },
     {
-      "name": "WallFront",
+      "name": "FenceFront",
       "className": "Part",
       "properties": {
         "Anchored": true,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Transparency": 1,
         "Size": [
-          3,
-          8,
+          1,
+          9,
           68
         ],
         "Position": [
           -70,
-          4,
+          4.5,
           0
-        ],
-        "Color": [
-          0.42,
-          0.4,
-          0.38
-        ],
-        "Material": "SmoothPlastic"
+        ]
+      },
+      "attributes": {
+        "Kind": "Fence"
       }
     },
     {
-      "name": "WallBack",
+      "name": "FenceBack",
       "className": "Part",
       "properties": {
         "Anchored": true,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Transparency": 1,
         "Size": [
-          3,
-          8,
+          1,
+          9,
           135
         ],
         "Position": [
           -151.5,
-          4,
+          4.5,
           0
-        ],
-        "Color": [
-          0.42,
-          0.4,
-          0.38
-        ],
-        "Material": "SmoothPlastic"
+        ]
+      },
+      "attributes": {
+        "Kind": "Fence"
       }
     },
     {
-      "name": "WallLeft",
+      "name": "FenceLeft",
       "className": "Part",
       "properties": {
         "Anchored": true,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Transparency": 1,
         "Size": [
           83,
-          8,
-          3
+          9,
+          1
         ],
         "Position": [
           -111.5,
-          4,
+          4.5,
           -67.5
-        ],
-        "Color": [
-          0.42,
-          0.4,
-          0.38
-        ],
-        "Material": "SmoothPlastic"
+        ]
+      },
+      "attributes": {
+        "Kind": "Fence"
       }
     },
     {
@@ -169,15 +169,15 @@
           -50
         ],
         "Color": [
-          0.2,
-          0.45,
-          0.9
+          0.62,
+          0.55,
+          0.39
         ],
         "Material": "SmoothPlastic"
       },
       "attributes": {
         "EntityId": "LeftTower",
-        "Team": "Blue",
+        "Team": "Defenders",
         "Kind": "Tower",
         "MaxHealth": 900,
         "Health": 900
@@ -199,15 +199,15 @@
           -30
         ],
         "Color": [
-          0.2,
-          0.45,
-          0.9
+          0.62,
+          0.55,
+          0.39
         ],
         "Material": "SmoothPlastic"
       },
       "attributes": {
         "EntityId": "LeftInhibitor",
-        "Team": "Blue",
+        "Team": "Defenders",
         "Kind": "Barracks",
         "MaxHealth": 700,
         "Health": 700,
@@ -235,7 +235,7 @@
         ]
       },
       "attributes": {
-        "Team": "Blue",
+        "Team": "Defenders",
         "Kind": "MinionSpawn",
         "Source": "LeftInhibitor"
       }
@@ -265,26 +265,26 @@
       }
     },
     {
-      "name": "WallRight",
+      "name": "FenceRight",
       "className": "Part",
       "properties": {
         "Anchored": true,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Transparency": 1,
         "Size": [
           83,
-          8,
-          3
+          9,
+          1
         ],
         "Position": [
           -111.5,
-          4,
+          4.5,
           67.5
-        ],
-        "Color": [
-          0.42,
-          0.4,
-          0.38
-        ],
-        "Material": "SmoothPlastic"
+        ]
+      },
+      "attributes": {
+        "Kind": "Fence"
       }
     },
     {
@@ -303,15 +303,15 @@
           50
         ],
         "Color": [
-          0.2,
-          0.45,
-          0.9
+          0.62,
+          0.55,
+          0.39
         ],
         "Material": "SmoothPlastic"
       },
       "attributes": {
         "EntityId": "RightTower",
-        "Team": "Blue",
+        "Team": "Defenders",
         "Kind": "Tower",
         "MaxHealth": 900,
         "Health": 900
@@ -333,15 +333,15 @@
           30
         ],
         "Color": [
-          0.2,
-          0.45,
-          0.9
+          0.62,
+          0.55,
+          0.39
         ],
         "Material": "SmoothPlastic"
       },
       "attributes": {
         "EntityId": "RightInhibitor",
-        "Team": "Blue",
+        "Team": "Defenders",
         "Kind": "Barracks",
         "MaxHealth": 700,
         "Health": 700,
@@ -369,7 +369,7 @@
         ]
       },
       "attributes": {
-        "Team": "Blue",
+        "Team": "Defenders",
         "Kind": "MinionSpawn",
         "Source": "RightInhibitor"
       }

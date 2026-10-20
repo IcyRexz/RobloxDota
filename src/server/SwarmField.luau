@@ -5,18 +5,28 @@
 -- "downhill" from the cell it stands on, so hundreds of units share one cheap
 -- calculation instead of each running its own pathfinding.
 -- Fields are rebuilt when a structure falls (the space it stood on opens up).
+-- The same grid also answers "is the straight line from A to B open?" and gives
+-- short detours around obstacles (clearLine, waypointToward), for units walking
+-- at an enemy instead of along a field.
 
 local Workspace = game:GetService("Workspace")
+
+local Landscape = require(script.Parent.Landscape)
 
 local SwarmField = {}
 
 local CELL = 4 -- studs per grid cell
 local X_MIN, X_MAX = -160, 180 -- area covered by the grid (the base is at -X)
 local Z_MIN, Z_MAX = -132, 132
-local CLEARANCE = 1.5 -- studs units keep from walls and structures
+local CLEARANCE = 2 -- studs units keep from walls and structures (full-size bodies)
 local GOAL_MARGIN = 6 -- cells within this many studs of a goal's side count as "arrived"
-local BLOCK_HEIGHT = 1.5 -- parts whose top is above this are obstacles (floors are not)
+local BLOCK_HEIGHT = 1.5 -- parts whose top is this far above the ground under them are obstacles (floors are not)
 local DIAGONAL = math.sqrt(2)
+-- Detours: blocked cells this close to either end of a line are ignored (a unit
+-- brushing a wall, or walking up to a structure's side, which is itself blocked).
+local END_IGNORE = CLEARANCE + CELL
+local DETOUR_MAX_CELLS = 400 -- search budget per detour (chases are short), keeps it cheap
+local DETOUR_ARRIVE = 6 -- studs from the target where a detour may end
 
 local NX = math.floor((X_MAX - X_MIN) / CELL)
 local NZ = math.floor((Z_MAX - Z_MIN) / CELL)
@@ -75,10 +85,11 @@ end
 local function isObstacle(part: BasePart): boolean
 	return part.CanCollide
 		and part:GetAttribute("Kind") ~= "Boundary"
-		and part.Position.Y + part.Size.Y / 2 > BLOCK_HEIGHT
+		and part.Position.Y + part.Size.Y / 2 > Landscape.heightAt(part.Position.X, part.Position.Z) + BLOCK_HEIGHT
 end
 
 local function rasterize()
+	Landscape.build() -- trees and rocks must exist before the map is read
 	table.clear(blocked)
 	for i = 1, NX * NZ do
 		blocked[i] = false
@@ -216,6 +227,93 @@ function SwarmField.rebuild()
 	for name, spec in specs do
 		fields[name] = compute(spec)
 	end
+end
+
+-- True if a unit can walk the straight line from a to b without crossing a
+-- blocked cell (ignoring cells within END_IGNORE of either end).
+function SwarmField.clearLine(a: Vector3, b: Vector3): boolean
+	local flat = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
+	local length = flat.Magnitude
+	if length <= 2 * END_IGNORE then
+		return true
+	end
+	local stepLength = CELL / 2
+	local d = END_IGNORE
+	while d <= length - END_IGNORE do
+		local point = a + flat * (d / length)
+		local ix, iz = cellOf(point)
+		if inGrid(ix, iz) and blocked[index(ix, iz)] then
+			return false
+		end
+		d += stepLength
+	end
+	return true
+end
+
+-- A point to walk toward on the way from `from` to `to` around obstacles, or
+-- nil if no way is found within the search budget. A* over the grid; the
+-- answer is the farthest cell along the found path that can be walked to in a
+-- straight line, so units cut corners smoothly instead of zig-zagging.
+function SwarmField.waypointToward(from: Vector3, to: Vector3): Vector3?
+	local sx, sz = cellOf(from)
+	if not inGrid(sx, sz) then
+		return nil
+	end
+	local start = index(sx, sz)
+	local cost: { [number]: number } = { [start] = 0 }
+	local cameFrom: { [number]: number } = {}
+	local heap: { { number } } = {}
+	local function estimate(ix: number, iz: number): number
+		local c = cellCentre(ix, iz)
+		return Vector3.new(c.X - to.X, 0, c.Z - to.Z).Magnitude / CELL
+	end
+	heapPush(heap, start, estimate(sx, sz))
+	local expanded = 0
+	local reached: number? = nil
+	while expanded < DETOUR_MAX_CELLS do
+		local entry = heapPop(heap)
+		if not entry then
+			break
+		end
+		local cell = entry[1]
+		local ix, iz = (cell - 1) % NX, (cell - 1) // NX
+		expanded += 1
+		if estimate(ix, iz) * CELL <= DETOUR_ARRIVE then
+			reached = cell
+			break
+		end
+		for _, step in NEIGHBOURS do
+			-- The start cell may itself be blocked (unit pressed against a wall).
+			if canStep(ix, iz, step[1], step[2], blocked) then
+				local next = index(ix + step[1], iz + step[2])
+				local nc = cost[cell] + step[3]
+				if nc < (cost[next] or math.huge) then
+					cost[next] = nc
+					cameFrom[next] = cell
+					heapPush(heap, next, nc + estimate(ix + step[1], iz + step[2]))
+				end
+			end
+		end
+	end
+	if not reached then
+		return nil
+	end
+	-- Walk back from the end; keep the farthest cell still in straight sight.
+	local path: { number } = {}
+	local cell: number? = reached
+	while cell and cell ~= start do
+		table.insert(path, 1, cell)
+		cell = cameFrom[cell]
+	end
+	local best: Vector3? = nil
+	for _, c in path do
+		local centre = cellCentre((c - 1) % NX, (c - 1) // NX)
+		if best and not SwarmField.clearLine(from, centre) then
+			break
+		end
+		best = centre
+	end
+	return best
 end
 
 -- Walking distance (in cells) from a position to the field's goal; huge if unreachable.

@@ -20,8 +20,8 @@ local ALLY_COLOR = Color3.fromRGB(70, 200, 90)
 local ENEMY_COLOR = Color3.fromRGB(220, 60, 60)
 local BAR_BACK_COLOR = Color3.fromRGB(25, 25, 30)
 local BAR_SIZE = UDim2.fromOffset(40, 5) -- on-screen pixels
--- Until match teams exist (task T05), everyone is treated as Blue.
-local DEFAULT_TEAM = "Blue"
+-- Players are always on our side; used until the server sets the attribute.
+local DEFAULT_TEAM = Config.Teams.Defenders
 
 local MAX_SHOT_TIME = 2 -- ignore shot messages with longer draw/flight times
 local ARROW_COLOR = Color3.fromRGB(120, 80, 40)

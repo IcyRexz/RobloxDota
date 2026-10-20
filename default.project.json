@@ -21,8 +21,9 @@
       "$ignoreUnknownInstances": true,
       "$properties": {
         "EnableMouseLockOption": false,
+        "CameraMode": "LockFirstPerson",
         "CharacterUseJumpPower": true,
-        "CharacterJumpPower": 0
+        "CharacterJumpPower": 50
       },
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",

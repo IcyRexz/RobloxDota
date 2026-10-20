@@ -3,7 +3,7 @@
 --  * a target marker (ring + outline) sits on the enemy your basic attack will
 --    go for: the nearest enemy hero, else minion, else attackable structure,
 --    within AcquireRange and line of sight. It stays on that target while it
---    remains valid. Red = in attack range, orange = you will walk to it.
+--    remains valid. Red marker = in attack range, orange = you will walk to it.
 --  * picking a target yourself: click (or tap) an enemy within AcquireRange to
 --    lock onto it, or press Tab to cycle through enemies in range, nearest
 --    first. A locked target shows a solid, still ring. The lock ends when the
@@ -34,8 +34,8 @@ local CHASE_COLOR = Color3.fromRGB(255, 170, 40)
 local MARKER_DASHES = 12
 local MARKER_SPIN = math.rad(90) -- degrees per second
 local RETARGET_SECONDS = 0.1 -- how often the marker's target is re-chosen
--- Until match teams exist (task T05), everyone is treated as Blue.
-local DEFAULT_TEAM = "Blue"
+-- Players are always on our side; used until the server sets the attribute.
+local DEFAULT_TEAM = Config.Teams.Defenders
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
