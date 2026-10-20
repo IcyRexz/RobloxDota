@@ -4,7 +4,9 @@
 -- keep their health in the server-owned Health/MaxHealth attributes. Heroes and
 -- backdoor protection are added when hero damage exists.
 
-local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Targeting = require(ReplicatedStorage.Shared.Targeting)
 
 local CombatService = {}
 
@@ -46,31 +48,11 @@ function CombatService.isAlive(target: Instance): boolean
 	return target.Parent ~= nil and CombatService.getHealth(target) > 0
 end
 
--- Each team's tower and barracks (the inhibitor), found once from the map.
-local towers: { [string]: Instance } = {}
-local barracks: { [string]: Instance } = {}
-for _, item in Workspace:WaitForChild("Arena"):GetDescendants() do
-	local team = item:GetAttribute("Team")
-	local kind = item:GetAttribute("Kind")
-	if typeof(team) == "string" then
-		if kind == "Tower" then
-			towers[team] = item
-		elseif kind == "Barracks" then
-			barracks[team] = item
-		end
-	end
-end
-
--- Objectives fall in order: tower, then barracks, then core. A structure cannot
--- be damaged while the one in front of it (same team) still stands.
+-- Objectives fall in order: a lane's tower, then its inhibitor (barracks), then
+-- the core once either inhibitor is down. The rule lives in Targeting.isLocked
+-- (shared with the client's target marker) and reads "GuardedBy" from the map.
 function CombatService.isLocked(target: Instance): boolean
-	local kind = target:GetAttribute("Kind")
-	local team = target:GetAttribute("Team")
-	if typeof(team) ~= "string" then
-		return false
-	end
-	local guard = if kind == "Barracks" then towers[team] elseif kind == "Core" then barracks[team] else nil
-	return guard ~= nil and CombatService.isAlive(guard)
+	return Targeting.isLocked(target, CombatService.isAlive)
 end
 
 -- Deals damage from an attacker to a target. attackerTeam is captured by the

@@ -56,22 +56,9 @@ local function isAlive(target: Instance): boolean
 	return target:IsDescendantOf(Workspace) and type(health) == "number" and health > 0
 end
 
--- Same objective-order lock as the server: barracks behind its tower, core behind its barracks.
+-- Same objective-order lock as the server (shared rule in Targeting).
 local function isLocked(target: Instance): boolean
-	local kind = target:GetAttribute("Kind")
-	local guardKind = if kind == "Barracks" then "Tower" elseif kind == "Core" then "Barracks" else nil
-	if not guardKind then
-		return false
-	end
-	local arena = Workspace:FindFirstChild("Arena")
-	for _, item in if arena then arena:GetDescendants() else {} do
-		if item:GetAttribute("Kind") == guardKind and item:GetAttribute("Team") == target:GetAttribute("Team") then
-			if isAlive(item) then
-				return true
-			end
-		end
-	end
-	return false
+	return Targeting.isLocked(target, isAlive)
 end
 
 -- Distance to the target if it is a valid enemy in AcquireRange with line of sight.

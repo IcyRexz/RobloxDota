@@ -9,6 +9,9 @@ One to five players defend a walled compound with a **Base Core** in the bottom 
 
 Outside matches, players meet in a shared **hub** where they pick a class (**Assault, Engineer, Medic or Heavy**), equip weapons and queue for missions. Each mission feeds **persistent progression**: **credits** buy new weapons and gear, and **each class levels up independently**, which opens harder maps with better rewards.
 
+## Theme: soldiers vs zombies (owner decision 2026-10-20)
+The players and their side are a modern military force (soldiers, guns, turrets, sandbags, mines); the enemy is a zombie horde. Chosen over "warriors vs zombies" because it fits the shooter genre, the Helldivers-style defence feel, the four classes, guns-and-gear progression, and reads clearly from the top-down camera. Current placeholder art is still medieval (sword/bow minions, knight tower model); it gets re-themed later, one item at a time (T32 in `docs/03_TASKS.md`), not all at once.
+
 ## Two currencies
 - **Gold:** in-match only, from kills; spent on building and repairing; gone when the match ends.
 - **Credits:** persistent, earned per mission; spent in the hub on weapons and gear.
@@ -40,7 +43,7 @@ Players on non-editor accounts join the public experience, pick a class in the h
 
 ## Owner decisions still OPEN
 Recorded here until decided; Claude does not invent them.
-- Game title.
+- Game title (should suit soldiers vs zombies).
 - Weapon aiming on PC (mouse-aimed shots is the working assumption; hitscan vs projectile per weapon).
 - Class abilities for Assault, Engineer, Medic and Heavy.
 - Gold: per-player or shared team pool.

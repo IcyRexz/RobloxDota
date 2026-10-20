@@ -35,6 +35,27 @@ function Targeting.aimPointOf(target: Instance, from: Vector3): Vector3?
 	return if root then root.Position else nil
 end
 
+-- Objective order, read from the map: a structure's "GuardedBy" attribute names
+-- the structures protecting it (comma-separated). It cannot be damaged while ALL
+-- of them still stand; once any guard is gone (destroyed structures are removed
+-- from the map), it unlocks. An inhibitor lists its lane's tower; the Base Core
+-- lists both inhibitors, so it opens when either lane breaks.
+-- isAlive is passed in because the server and client check health differently.
+function Targeting.isLocked(target: Instance, isAlive: (Instance) -> boolean): boolean
+	local guards = target:GetAttribute("GuardedBy")
+	local arena = Workspace:FindFirstChild("Arena")
+	if typeof(guards) ~= "string" or guards == "" or not arena then
+		return false
+	end
+	for name in string.gmatch(guards, "[^,%s]+") do
+		local guard = arena:FindFirstChild(name, true)
+		if not (guard and isAlive(guard)) then
+			return false
+		end
+	end
+	return true
+end
+
 -- Nothing solid between two points. Units (minions, characters) never block.
 function Targeting.hasLineOfSight(target: Instance, from: Vector3, to: Vector3): boolean
 	local ignore: { Instance } = { target }

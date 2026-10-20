@@ -1,0 +1,140 @@
+{
+  "className": "Model",
+  "children": [
+    {
+      "name": "Ground",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          423,
+          1,
+          420
+        ],
+        "Position": [
+          58.5,
+          -0.5,
+          0
+        ],
+        "Color": [
+          0.36,
+          0.55,
+          0.3
+        ],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "BoundaryWest",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          2,
+          40,
+          420
+        ],
+        "Position": [
+          -154,
+          20,
+          0
+        ],
+        "Color": [
+          0.42,
+          0.4,
+          0.38
+        ],
+        "Material": "SmoothPlastic",
+        "Transparency": 1,
+        "CanQuery": false
+      },
+      "attributes": {
+        "Kind": "Boundary"
+      }
+    },
+    {
+      "name": "BoundaryEast",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          2,
+          40,
+          420
+        ],
+        "Position": [
+          265,
+          20,
+          0
+        ],
+        "Color": [
+          0.42,
+          0.4,
+          0.38
+        ],
+        "Material": "SmoothPlastic",
+        "Transparency": 1,
+        "CanQuery": false
+      },
+      "attributes": {
+        "Kind": "Boundary"
+      }
+    },
+    {
+      "name": "BoundaryNorth",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          423,
+          40,
+          2
+        ],
+        "Position": [
+          58.5,
+          20,
+          -205
+        ],
+        "Color": [
+          0.42,
+          0.4,
+          0.38
+        ],
+        "Material": "SmoothPlastic",
+        "Transparency": 1,
+        "CanQuery": false
+      },
+      "attributes": {
+        "Kind": "Boundary"
+      }
+    },
+    {
+      "name": "BoundarySouth",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          423,
+          40,
+          2
+        ],
+        "Position": [
+          58.5,
+          20,
+          205
+        ],
+        "Color": [
+          0.42,
+          0.4,
+          0.38
+        ],
+        "Material": "SmoothPlastic",
+        "Transparency": 1,
+        "CanQuery": false
+      },
+      "attributes": {
+        "Kind": "Boundary"
+      }
+    }
+  ]
+}

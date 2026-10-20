@@ -41,9 +41,13 @@ local function localTeam(): string
 	return if type(team) == "string" then team else DEFAULT_TEAM
 end
 
-local function teamName(team: string): string
+-- How each side is named on banners. The zombies use team id "Red" in code.
+local TEAM_LABELS: { [string]: string } = { Blue = "BLUE TEAM", Red = "ZOMBIES" }
+local UNIT_LABELS: { [string]: string } = { Blue = "BLUE MINIONS", Red = "ZOMBIES" }
+
+local function tinted(team: string, text: string): string
 	local color = TEAM_TEXT_COLORS[team] or Color3.new(1, 1, 1)
-	return `<font color="#{color:ToHex()}">{string.upper(team)}</font>`
+	return `<font color="#{color:ToHex()}">{text}</font>`
 end
 
 -- Banner ---------------------------------------------------------------------
@@ -187,12 +191,12 @@ destroyedEvent.OnClientEvent:Connect(function(kind: unknown, team: unknown, kill
 		return
 	end
 	local ours = team == localTeam()
-	local detail = if kind == "Barracks" and TEAM_STRIP_COLORS[killerTeam]
-		then `{teamName(killerTeam)} MINIONS ARE NOW STRONGER`
+	local detail = if kind == "Barracks" and UNIT_LABELS[killerTeam]
+		then `{tinted(killerTeam, UNIT_LABELS[killerTeam])} ARE NOW STRONGER`
 		elseif ours then `YOUR {string.upper(name)} HAS FALLEN`
 		else `ENEMY {string.upper(name)} DESTROYED`
 	announce({
-		headline = `THE {teamName(team)} TEAM HAS LOST THEIR {string.upper(name)}`,
+		headline = `{tinted(team, TEAM_LABELS[team] or string.upper(team))} LOST A {string.upper(name)}`,
 		subline = detail,
 		stripColor = TEAM_STRIP_COLORS[killerTeam] or NEUTRAL_STRIP,
 	})

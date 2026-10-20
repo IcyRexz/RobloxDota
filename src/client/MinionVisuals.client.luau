@@ -3,16 +3,17 @@
 --  * a small health bar above every minion (green ally / red enemy, no name),
 --    shown within Config.Display.HealthBarRange of your hero
 --  * the archer's bow-draw pose and the flying arrow
+--  * the zombie's hand swipe (arm rears up, claws down, body lunges in)
 -- Display only. The server owns minion health and decides every hit; the arrow
--- just shows a shot the server has already scheduled.
+-- and the swipe just show a hit the server has already scheduled.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local JointPose = require(ReplicatedStorage.Shared.JointPose)
 
 local VISIBILITY_CHECK_SECONDS = 0.2
 local ALLY_COLOR = Color3.fromRGB(70, 200, 90)
@@ -31,9 +32,22 @@ local PULL_POSE = CFrame.Angles(0, math.rad(-25), 0) * CFrame.Angles(math.rad(70
 local REACH_SHARE = 0.35 -- part of the draw time spent reaching
 local RELEASE_TIME = 0.2 -- arm drops back to rest after letting go
 
+local MAX_SWING_TIME = 1 -- ignore swing messages with a longer hit delay
+-- Zombie swipe, relative to the resting pose (arms stretched forward):
+-- the arm rears up over the head while the body leans back, then claws down
+-- and inward across the body while the body lunges forward, then settles.
+local SWIPE_RAISE_POSE = CFrame.Angles(math.rad(75), 0, 0)
+local SWIPE_STRIKE_ANGLE = math.rad(-85)
+local SWIPE_STRIKE_TILT = math.rad(35) -- inward, toward the body's middle
+local LEAN_BACK_POSE = CFrame.Angles(math.rad(10), 0, 0)
+local LUNGE_POSE = CFrame.Angles(math.rad(-25), 0, 0)
+local SWIPE_RAISE_SHARE = 0.7 -- part of the hit delay spent rearing up; the rest is the strike
+local SWIPE_RECOVER_TIME = 0.3
+
 local player = Players.LocalPlayer
 local minionFolder = Workspace:WaitForChild("Minions")
 local shotEvent = ReplicatedStorage:WaitForChild("MinionShot") :: RemoteEvent
+local swingEvent = ReplicatedStorage:WaitForChild("MinionSwing") :: RemoteEvent
 
 local function localTeam(): string
 	local team = player:GetAttribute("Team")
@@ -137,45 +151,65 @@ task.spawn(function()
 	end
 end)
 
--- Archer shots --------------------------------------------------------------
+-- Joint poses (archer draw, zombie swipe) ---------------------------------------
+-- Poses are applied on this client only, on top of each joint's resting pose,
+-- through JointPose (works with Motor6D and AnimationConstraint rigs).
 
-local restPoses: { [Motor6D]: CFrame } = {}
-local armTweens: { [Motor6D]: Tween } = {}
+type PosedJoint = { joint: JointPose.Joint, tweens: { Tween } }
+local posedJoints: { [Model]: { [string]: PosedJoint } } = {}
+local warnedMissing = false
 
-local function moveArm(shoulder: Motor6D, pose: CFrame, seconds: number, style: Enum.EasingStyle)
-	local active = armTweens[shoulder]
-	if active then
-		active:Cancel()
+minionFolder.ChildRemoved:Connect(function(child)
+	if child:IsA("Model") then
+		posedJoints[child] = nil
 	end
-	local tween = TweenService:Create(
-		shoulder,
-		TweenInfo.new(seconds, style, Enum.EasingDirection.Out),
-		{ C0 = restPoses[shoulder] * pose }
-	)
-	armTweens[shoulder] = tween
-	tween:Play()
+end)
+
+-- Finds a joint and remembers its resting pose the first time it is used.
+local function joint(model: Model, name: string): PosedJoint?
+	local byName = posedJoints[model]
+	if not byName then
+		byName = {}
+		posedJoints[model] = byName
+	end
+	local posed = byName[name]
+	if not posed then
+		local found = JointPose.find(model, name)
+		if not found then
+			if not warnedMissing then
+				warnedMissing = true
+				warn(`[MinionVisuals] no joint named {name} in {model.Name}; poses will not show`)
+			end
+			return nil
+		end
+		posed = { joint = found, tweens = {} }
+		byName[name] = posed
+	end
+	return posed
 end
 
-local function playDraw(archer: Model, drawTime: number)
-	local shoulder = archer:FindFirstChild("LeftShoulder", true)
-	if not (shoulder and shoulder:IsA("Motor6D")) then
-		return
+local function moveArm(posed: PosedJoint, pose: CFrame, seconds: number, style: Enum.EasingStyle)
+	for _, tween in posed.tweens do
+		tween:Cancel()
 	end
-	if not restPoses[shoulder] then
-		restPoses[shoulder] = shoulder.C0
-		shoulder.Destroying:Connect(function()
-			restPoses[shoulder] = nil
-			armTweens[shoulder] = nil
-		end)
+	posed.tweens = JointPose.tween(posed.joint, pose, TweenInfo.new(seconds, style, Enum.EasingDirection.Out))
+end
+
+-- Archer shots --------------------------------------------------------------
+
+local function playDraw(archer: Model, drawTime: number)
+	local shoulder = joint(archer, "LeftShoulder")
+	if not shoulder then
+		return
 	end
 	moveArm(shoulder, REACH_POSE, drawTime * REACH_SHARE, Enum.EasingStyle.Quad)
 	task.delay(drawTime * REACH_SHARE, function()
-		if shoulder.Parent then
+		if archer.Parent then
 			moveArm(shoulder, PULL_POSE, drawTime * (1 - REACH_SHARE), Enum.EasingStyle.Sine)
 		end
 	end)
 	task.delay(drawTime, function()
-		if shoulder.Parent then
+		if archer.Parent then
 			moveArm(shoulder, CFrame.identity, RELEASE_TIME, Enum.EasingStyle.Back)
 		end
 	end)
@@ -252,4 +286,67 @@ shotEvent.OnClientEvent:Connect(function(archer: unknown, target: unknown, drawT
 			flyArrow(archer, target, flight)
 		end
 	end)
+end)
+
+-- Zombie swipes --------------------------------------------------------------
+
+local swipeCounts: { [Model]: number } = {}
+minionFolder.ChildRemoved:Connect(function(child)
+	if child:IsA("Model") then
+		swipeCounts[child] = nil
+	end
+end)
+local loggedFirstSwipe = false
+
+local function playSwipe(zombie: Model, hitDelay: number)
+	-- Arms take turns.
+	local count = (swipeCounts[zombie] or 0) + 1
+	swipeCounts[zombie] = count
+	local side = if count % 2 == 1 then "Right" else "Left"
+	local shoulder = joint(zombie, side .. "Shoulder")
+	local waist = joint(zombie, "Waist")
+	if not shoulder then
+		return
+	end
+	if not loggedFirstSwipe then
+		-- Development log: proves swipe messages arrive and which joints are posed.
+		loggedFirstSwipe = true
+		print(`[MinionVisuals] first zombie swipe: shoulder joint system {shoulder.joint.system}, waist {if waist then waist.joint.system else "none"}`)
+	end
+	local inward = if side == "Right" then 1 else -1
+	local raiseTime = hitDelay * SWIPE_RAISE_SHARE
+	local strikeTime = hitDelay - raiseTime
+
+	moveArm(shoulder, SWIPE_RAISE_POSE, raiseTime, Enum.EasingStyle.Quad)
+	if waist then
+		moveArm(waist, LEAN_BACK_POSE, raiseTime, Enum.EasingStyle.Quad)
+	end
+	task.delay(raiseTime, function()
+		if zombie.Parent ~= minionFolder then
+			return
+		end
+		moveArm(shoulder, CFrame.Angles(SWIPE_STRIKE_ANGLE, 0, SWIPE_STRIKE_TILT * inward), strikeTime, Enum.EasingStyle.Quart)
+		if waist then
+			moveArm(waist, LUNGE_POSE, strikeTime, Enum.EasingStyle.Quart)
+		end
+	end)
+	task.delay(hitDelay, function()
+		if zombie.Parent ~= minionFolder then
+			return
+		end
+		moveArm(shoulder, CFrame.identity, SWIPE_RECOVER_TIME, Enum.EasingStyle.Sine)
+		if waist then
+			moveArm(waist, CFrame.identity, SWIPE_RECOVER_TIME, Enum.EasingStyle.Sine)
+		end
+	end)
+end
+
+swingEvent.OnClientEvent:Connect(function(zombie: unknown, hitDelay: unknown)
+	if not (typeof(zombie) == "Instance" and zombie:IsA("Model") and zombie.Parent == minionFolder) then
+		return
+	end
+	if not (type(hitDelay) == "number" and hitDelay == hitDelay and hitDelay > 0 and hitDelay <= MAX_SWING_TIME) then
+		return
+	end
+	playSwipe(zombie, hitDelay)
 end)

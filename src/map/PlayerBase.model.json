@@ -1,0 +1,402 @@
+{
+  "className": "Model",
+  "children": [
+    {
+      "name": "BaseFloor",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          80,
+          1,
+          132
+        ],
+        "Position": [
+          -110,
+          -0.48,
+          0
+        ],
+        "Color": [
+          0.6,
+          0.58,
+          0.55
+        ],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "PlayerSpawn",
+      "className": "SpawnLocation",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          16,
+          1,
+          16
+        ],
+        "Position": [
+          -138,
+          0.5,
+          0
+        ],
+        "Color": [
+          0.55,
+          0.7,
+          0.95
+        ],
+        "Material": "SmoothPlastic",
+        "Neutral": true,
+        "Duration": 0
+      },
+      "attributes": {
+        "Team": "Blue",
+        "Kind": "Spawn"
+      }
+    },
+    {
+      "name": "BaseCore",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          10,
+          12,
+          10
+        ],
+        "Position": [
+          -118,
+          6,
+          0
+        ],
+        "Color": [
+          0.2,
+          0.45,
+          0.9
+        ],
+        "Material": "SmoothPlastic"
+      },
+      "attributes": {
+        "EntityId": "BaseCore",
+        "Team": "Blue",
+        "Kind": "Core",
+        "MaxHealth": 1200,
+        "Health": 1200,
+        "GuardedBy": "LeftInhibitor,RightInhibitor"
+      }
+    },
+    {
+      "name": "WallFront",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          3,
+          8,
+          68
+        ],
+        "Position": [
+          -70,
+          4,
+          0
+        ],
+        "Color": [
+          0.42,
+          0.4,
+          0.38
+        ],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "WallBack",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          3,
+          8,
+          135
+        ],
+        "Position": [
+          -151.5,
+          4,
+          0
+        ],
+        "Color": [
+          0.42,
+          0.4,
+          0.38
+        ],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "WallLeft",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          83,
+          8,
+          3
+        ],
+        "Position": [
+          -111.5,
+          4,
+          -67.5
+        ],
+        "Color": [
+          0.42,
+          0.4,
+          0.38
+        ],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "LeftTower",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          8,
+          19,
+          8
+        ],
+        "Position": [
+          -84,
+          9.5,
+          -50
+        ],
+        "Color": [
+          0.2,
+          0.45,
+          0.9
+        ],
+        "Material": "SmoothPlastic"
+      },
+      "attributes": {
+        "EntityId": "LeftTower",
+        "Team": "Blue",
+        "Kind": "Tower",
+        "MaxHealth": 900,
+        "Health": 900
+      }
+    },
+    {
+      "name": "LeftInhibitor",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          8,
+          8,
+          8
+        ],
+        "Position": [
+          -104,
+          4,
+          -30
+        ],
+        "Color": [
+          0.2,
+          0.45,
+          0.9
+        ],
+        "Material": "SmoothPlastic"
+      },
+      "attributes": {
+        "EntityId": "LeftInhibitor",
+        "Team": "Blue",
+        "Kind": "Barracks",
+        "MaxHealth": 700,
+        "Health": 700,
+        "GuardedBy": "LeftTower"
+      }
+    },
+    {
+      "name": "LeftMinionSpawn",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Transparency": 1,
+        "Size": [
+          4,
+          1,
+          4
+        ],
+        "Position": [
+          -96,
+          0.5,
+          -38
+        ]
+      },
+      "attributes": {
+        "Team": "Blue",
+        "Kind": "MinionSpawn",
+        "Source": "LeftInhibitor"
+      }
+    },
+    {
+      "name": "LeftOpening",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Transparency": 1,
+        "Size": [
+          4,
+          1,
+          32
+        ],
+        "Position": [
+          -70,
+          0.5,
+          -50
+        ]
+      },
+      "attributes": {
+        "Kind": "Opening"
+      }
+    },
+    {
+      "name": "WallRight",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          83,
+          8,
+          3
+        ],
+        "Position": [
+          -111.5,
+          4,
+          67.5
+        ],
+        "Color": [
+          0.42,
+          0.4,
+          0.38
+        ],
+        "Material": "SmoothPlastic"
+      }
+    },
+    {
+      "name": "RightTower",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          8,
+          19,
+          8
+        ],
+        "Position": [
+          -84,
+          9.5,
+          50
+        ],
+        "Color": [
+          0.2,
+          0.45,
+          0.9
+        ],
+        "Material": "SmoothPlastic"
+      },
+      "attributes": {
+        "EntityId": "RightTower",
+        "Team": "Blue",
+        "Kind": "Tower",
+        "MaxHealth": 900,
+        "Health": 900
+      }
+    },
+    {
+      "name": "RightInhibitor",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          8,
+          8,
+          8
+        ],
+        "Position": [
+          -104,
+          4,
+          30
+        ],
+        "Color": [
+          0.2,
+          0.45,
+          0.9
+        ],
+        "Material": "SmoothPlastic"
+      },
+      "attributes": {
+        "EntityId": "RightInhibitor",
+        "Team": "Blue",
+        "Kind": "Barracks",
+        "MaxHealth": 700,
+        "Health": 700,
+        "GuardedBy": "RightTower"
+      }
+    },
+    {
+      "name": "RightMinionSpawn",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Transparency": 1,
+        "Size": [
+          4,
+          1,
+          4
+        ],
+        "Position": [
+          -96,
+          0.5,
+          38
+        ]
+      },
+      "attributes": {
+        "Team": "Blue",
+        "Kind": "MinionSpawn",
+        "Source": "RightInhibitor"
+      }
+    },
+    {
+      "name": "RightOpening",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Transparency": 1,
+        "Size": [
+          4,
+          1,
+          32
+        ],
+        "Position": [
+          -70,
+          0.5,
+          50
+        ]
+      },
+      "attributes": {
+        "Kind": "Opening"
+      }
+    }
+  ]
+}

@@ -20,6 +20,9 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 - Depends on: T02. Reuses: `src/map/` (BlueBase, Lane, RedBase, Decor), old T03.
 - Do: Walled compound with Base Core in the bottom half, gates, player spawn, pre-placed build nodes; open ground in the top half; enemy spawn markers along the top; enemy path waypoints. Keep the map closed so players cannot escape.
 - Done when: players spawn in the compound, can reach every node, cannot leave the map; enemies have a valid path to the core. Verify: A02.
+- Follow-ups kept for later (owner 2026-10-20, not to implement yet):
+  - **T03a — Natural map edges:** replace the temporary invisible boundary with irregular terrain edges, cliffs, mountains or dense forest, kept well away from the combat area.
+  - **T03b — Battlefield variety:** occasional rocks, ruins or terrain features that the swarm flows around, never forming corridors or permanent lanes.
 
 ### T04 — Camera and desktop movement
 - Depends on: T03. Reuses: `HeroCamera.client.luau` (kept as is), old T04.
@@ -163,6 +166,19 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 - Depends on: T30. Reuses: old T26.
 - Do: README, credits, known issues, tested version and devices.
 - Done when: deliverables match shipped behavior. Verify: A16.
+
+### T32 — Re-theme to soldiers vs zombies
+- Depends on: owner picks each item (theme decided 2026-10-20; brief "Theme").
+- Do, one item at a time, art and names only (systems stay):
+  - Blue melee minion -> soldier (e.g. bayonet rifle or riot shield) instead of sword.
+  - Blue archer minion -> rifleman: rifle instead of bow, tracer instead of arrow (same shot code: aim, travel, damage on arrival).
+  - Tower knight model (`assets/TowerModel.rbxmx`) -> turret or bunker art.
+  - Inhibitors -> barracks or supply depots (display names, look).
+  - Base Core and zombie cores -> military command post and zombie nests/hives (look, names).
+  - Base walls/floor -> sandbags, concrete, fences; banner and UI wording.
+  - Player hero "Zeus" lightning attack -> a gun (lines up with T08).
+- Animations follow the standard patterns in `04_CONTROLS_ANIMATIONS.md`.
+- Done when: no medieval placeholder remains in play. Verify: A13.
 
 ## Old MOBA tasks with no direct successor
 Old T09 lane lock order, T14 Arc Bolt and T15 Slip (could return as class abilities in T18), T16 phone duel (folded into T26). See `docs/archive/moba/03_TASKS.md`.

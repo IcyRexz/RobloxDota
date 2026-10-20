@@ -1,7 +1,14 @@
 --!strict
--- Spawns minion waves in front of each core and walks them down the lane.
--- So far: spawning, walking, fighting enemy minions, heroes and structures,
--- dying, despawning, and the inhibitor (barracks) bonus. Leash comes later.
+-- Spawns unit waves and moves them as a swarm across the open battlefield.
+-- Our minions (Blue) come out of each standing inhibitor and head for the
+-- zombie cores; zombies (team "Red") come out of each standing zombie core and
+-- head for our Base Core. There are no lanes or routes: every unit follows a
+-- shared flow field (SwarmField) around walls and structures, spreads out
+-- from its neighbours (separation) and drifts a little (wander), so the horde
+-- fans out over open ground and squeezes through the base openings. Each
+-- zombie picks one of the base openings at spawn, nearer ones more likely.
+-- Also: fighting enemy units, heroes and structures, dying, despawning, and
+-- the inhibitor (barracks) bonus.
 
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
@@ -9,33 +16,36 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local CombatService = require(script.Parent.CombatService)
+local SwarmField = require(script.Parent.SwarmField)
 local Config = require(ReplicatedStorage.Shared.Config)
+local JointPose = require(ReplicatedStorage.Shared.JointPose)
 
 type MinionStats = Config.MinionStats
 
 local MinionConfig = Config.Minion
 
 local TICK_SECONDS = 0.2
-local WAYPOINT_REACHED = 2
 -- Once holding position, an enemy must back off this much farther before the
 -- minion moves again. Stops minions flickering between walking and standing.
 local HOLD_SLACK = 1.5
--- Each wave member gets its own formation spot: which side of the structures it
--- passes (-1 north, +1 south) and which file (0 inner, 1 outer). The archer
--- walks between the two south files.
-local FORMATION: { { side: number, file: number } } = {
-	{ side = -1, file = 0 },
-	{ side = 1, file = 0 },
-	{ side = -1, file = 1 },
-	{ side = 1, file = 1 },
-	{ side = 1, file = 0.5 },
-}
+-- Swarm steering (studs and weights; tune by eye in Studio).
+local SPAWN_SCATTER = 7 -- units appear anywhere within this radius of their spawn marker
+local SEPARATION_RADIUS = 3.5 -- neighbours closer than this push each other apart
+local SEPARATION_WEIGHT = 1.4
+local WANDER_WEIGHT = 0.45 -- sideways drift, so units fan out instead of queueing
+local WANDER_CHANGE = 0.25 -- how fast each unit's drift changes per tick
+local STEER_AHEAD = 6 -- studs ahead each MoveTo aims
+local OVERLAP_NUDGE = 1.2 -- a unit standing still is nudged apart if neighbours overlap it
 local COLLISION_GROUP = "Minions" -- minions pass through each other instead of shoving
 
 local TEAM_COLORS: { [string]: Color3 } = {
 	Blue = Color3.new(0.2, 0.45, 0.9),
-	Red = Color3.new(0.85, 0.2, 0.2),
 }
+-- Zombies: dark green skin, blood-red shirt, muddy legs, glowing red eyes.
+local ZOMBIE_SKIN = Color3.fromRGB(78, 104, 58)
+local ZOMBIE_SHIRT = Color3.fromRGB(110, 34, 30)
+local ZOMBIE_LEGS = Color3.fromRGB(62, 70, 48)
+local ZOMBIE_EYES = Color3.fromRGB(255, 40, 30)
 
 -- Roblox's own default R15 animations (free for any game). "Tool hold" raises
 -- the right arm forward, the way players hold a sword.
@@ -46,39 +56,14 @@ local SLASH_ANIMATION = "rbxassetid://522635514" -- default "tool slash" swing, 
 -- The walk animation is made for speed 16; scale it so feet match the real speed.
 local WALK_ANIMATION_BASE_SPEED = 16
 
--- Lane route for Blue, which walks toward +X. Red uses the same points mirrored.
--- side/file come from FORMATION. Structures span z -5..5, walls sit at z +-18.
--- Layout reference: barracks x -56, own tower x -40, enemy tower x 36..44,
--- enemy barracks x 52..60, enemy core x 67..77. Enemy structures are fought
--- when they come into range (see chooseTarget); once one falls it becomes a
--- ruin minions walk through, and the route carries on to the next.
-local function route(team: string, side: number, file: number): { Vector3 }
-	local direction = if team == "Blue" then 1 else -1
-	local passZ = side * (8 + 3 * file) -- clear of the structures
-	local laneZ = side * (1.5 + 3 * file) -- tighter formation in the open lane
-	local points = {
-		Vector3.new(-62, 0, passZ), -- step sideways, between core and barracks
-		Vector3.new(-34, 0, passZ), -- walk past own barracks and tower
-		Vector3.new(-28, 0, laneZ), -- move back toward the middle
-		Vector3.new(30, 0, laneZ), -- up to the enemy tower
-		Vector3.new(34, 0, passZ), -- step sideways around it
-		Vector3.new(62, 0, passZ), -- past the enemy tower and barracks
-		Vector3.new(62, 0, laneZ), -- in front of the enemy core
-	}
-	for i, point in points do
-		points[i] = Vector3.new(point.X * direction, point.Y, point.Z)
-	end
-	return points
-end
-
 type Minion = {
 	model: Model,
 	humanoid: Humanoid,
 	root: BasePart,
 	team: string,
 	stats: MinionStats,
-	waypoints: { Vector3 },
-	nextWaypoint: number,
+	field: string, -- which SwarmField it follows
+	wander: number, -- current sideways drift, -1 (left) .. 1 (right)
 	expiresAt: number,
 	walkTrack: AnimationTrack,
 	idleTrack: AnimationTrack,
@@ -89,7 +74,7 @@ type Minion = {
 	structure: BasePart?,
 	-- An enemy that drew this minion's aggro: an enemy minion that hit it, or an
 	-- enemy hero that hit one of its heroes. It fights back (see chooseTarget).
-	attacker: Model?,
+	attacker: Instance?,
 	holding: boolean,
 	nextAttackAt: number,
 }
@@ -107,6 +92,12 @@ local byModel: { [Instance]: Minion } = {}
 local shotEvent = Instance.new("RemoteEvent")
 shotEvent.Name = "MinionShot"
 shotEvent.Parent = ReplicatedStorage
+
+-- Tells every client to play a zombie's hand swipe: (zombie, hitDelay).
+-- Server -> client only; the server never listens to it.
+local swingEvent = Instance.new("RemoteEvent")
+swingEvent.Name = "MinionSwing"
+swingEvent.Parent = ReplicatedStorage
 
 PhysicsService:RegisterCollisionGroup(COLLISION_GROUP)
 PhysicsService:CollisionGroupSetCollidable(COLLISION_GROUP, COLLISION_GROUP, false)
@@ -158,16 +149,59 @@ local function addBow(body: Model)
 	addWeaponPart(hand, Vector3.new(0.05, 0.05, 3.24), Color3.fromRGB(230, 230, 230), CFrame.new(0, 0.26, 0)) -- string
 end
 
+-- Zombie look: no face, two glowing red eyes, both arms stretched forward.
+-- The arms are raised by turning the shoulder joints' resting pose (JointPose),
+-- so the walk animation and the client's swipe still play on top of it.
+local function makeZombie(body: Model)
+	local head = body:FindFirstChild("Head")
+	if head and head:IsA("BasePart") then
+		local face = head:FindFirstChild("face")
+		if face then
+			face:Destroy()
+		end
+		for _, x in { -0.22, 0.22 } do
+			local eye = Instance.new("Part")
+			eye.Name = "Eye"
+			eye.Shape = Enum.PartType.Ball
+			eye.Size = Vector3.new(0.22, 0.22, 0.22)
+			eye.Color = ZOMBIE_EYES
+			eye.Material = Enum.Material.Neon
+			eye.Massless = true
+			eye.CanCollide = false
+			eye.CanQuery = false
+			eye.CanTouch = false
+			local offset = CFrame.new(x, 0.1, -head.Size.Z / 2)
+			eye.CFrame = head.CFrame * offset
+			local weld = Instance.new("Weld")
+			weld.Part0 = head
+			weld.Part1 = eye
+			weld.C0 = offset
+			weld.Parent = eye
+			eye.Parent = body
+		end
+	end
+	for _, jointName in { "LeftShoulder", "RightShoulder" } do
+		local shoulder = JointPose.find(body, jointName)
+		if shoulder then
+			JointPose.set(shoulder, CFrame.Angles(math.rad(80), 0, 0)) -- arm points forward
+		end
+		-- Development log: which joint system the rig uses (Motor6D or the
+		-- Avatar Joint Upgrade's AnimationConstraint), since posing depends on it.
+		print(`[Minions] zombie {jointName}: {if shoulder then shoulder.system else "NOT FOUND"}`)
+	end
+end
+
 -- One finished body per team and type, built once and cloned for every spawn.
 local function buildTemplate(team: string, stats: MinionStats): Model
-	local color = TEAM_COLORS[team]
+	local zombie = stats.kind == "Zombie"
+	local color = TEAM_COLORS[team] or Color3.new(0.5, 0.5, 0.5)
 	local description = Instance.new("HumanoidDescription")
-	description.HeadColor = color
-	description.TorsoColor = color
-	description.LeftArmColor = color
-	description.RightArmColor = color
-	description.LeftLegColor = color
-	description.RightLegColor = color
+	description.HeadColor = if zombie then ZOMBIE_SKIN else color
+	description.TorsoColor = if zombie then ZOMBIE_SHIRT else color
+	description.LeftArmColor = if zombie then ZOMBIE_SKIN else color
+	description.RightArmColor = if zombie then ZOMBIE_SKIN else color
+	description.LeftLegColor = if zombie then ZOMBIE_LEGS else color
+	description.RightLegColor = if zombie then ZOMBIE_LEGS else color
 	local body = Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
 	body.Name = team .. stats.kind
 	-- Remove any built-in scripts (such as the default Animate script) so only
@@ -177,7 +211,9 @@ local function buildTemplate(team: string, stats: MinionStats): Model
 			item:Destroy()
 		end
 	end
-	if stats.kind == "Archer" then
+	if zombie then
+		makeZombie(body)
+	elseif stats.kind == "Archer" then
 		addBow(body)
 	else
 		addSword(body)
@@ -223,9 +259,11 @@ local function buildTemplate(team: string, stats: MinionStats): Model
 end
 
 local templates: { [string]: Model } = {}
-for team in TEAM_COLORS do
-	for _, stats in { MinionConfig.Melee, MinionConfig.Archer } do
-		templates[team .. stats.kind] = buildTemplate(team, stats)
+for team, wave in MinionConfig.Waves do
+	for _, stats in wave do
+		if not templates[team .. stats.kind] then
+			templates[team .. stats.kind] = buildTemplate(team, stats)
+		end
 	end
 end
 
@@ -246,16 +284,104 @@ local function loadTrack(humanoid: Humanoid, animationId: string, looped: boolea
 	return track
 end
 
-local function findSpawn(team: string): BasePart?
-	for _, item in arena:GetDescendants() do
-		if item:IsA("BasePart") and item:GetAttribute("Kind") == "MinionSpawn" and item:GetAttribute("Team") == team then
-			return item
-		end
+-- Spawn markers, one per team per lane. Each names its "Source" structure
+-- (our inhibitor, or a zombie core); the lane stops spawning once it falls.
+type SpawnPoint = { marker: BasePart, team: string, source: Instance? }
+local spawnPoints: { SpawnPoint } = {}
+for _, item in arena:GetDescendants() do
+	local team = item:GetAttribute("Team")
+	local sourceName = item:GetAttribute("Source")
+	if item:IsA("BasePart") and item:GetAttribute("Kind") == "MinionSpawn" and typeof(team) == "string" then
+		table.insert(spawnPoints, {
+			marker = item,
+			team = team,
+			source = if typeof(sourceName) == "string" then arena:FindFirstChild(sourceName, true) else nil,
+		})
 	end
-	return nil
+end
+table.sort(spawnPoints, function(a, b) -- same order every run (left lane first)
+	return a.marker.Name < b.marker.Name
+end)
+
+-- Flow fields (see SwarmField). Zombies get one field per base opening, each
+-- with the other openings walled off, so a zombie committed to an opening
+-- really goes through it; our minions get one field to the nearest zombie core.
+local cores: { [string]: { BasePart } } = {}
+local openings: { BasePart } = {}
+for _, item in arena:GetDescendants() do
+	local team = item:GetAttribute("Team")
+	if item:IsA("BasePart") and item:GetAttribute("Kind") == "Core" and typeof(team) == "string" then
+		cores[team] = cores[team] or {}
+		table.insert(cores[team], item)
+	elseif item:IsA("BasePart") and item:GetAttribute("Kind") == "Opening" then
+		table.insert(openings, item)
+	end
+end
+table.sort(openings, function(a, b)
+	return a.Name < b.Name
+end)
+
+local function standingCores(team: string): () -> { BasePart }
+	return function()
+		local list: { BasePart } = {}
+		local teamCores: { BasePart } = cores[team] or {}
+		for _, core in teamCores do
+			if CombatService.isAlive(core) then
+				table.insert(list, core)
+			end
+		end
+		return list
+	end
 end
 
-local spawnPoints: { [string]: BasePart? } = { Blue = findSpawn("Blue"), Red = findSpawn("Red") }
+local zombieFields: { string } = {}
+for _, opening in openings do
+	local others = {}
+	for _, other in openings do
+		if other ~= opening then
+			table.insert(others, other)
+		end
+	end
+	local name = "ToBaseVia" .. opening.Name
+	SwarmField.define(name, { goals = standingCores("Blue"), closed = others })
+	table.insert(zombieFields, name)
+end
+if #zombieFields == 0 then -- a map without marked openings: one field straight to the core
+	SwarmField.define("ToBase", { goals = standingCores("Blue"), closed = {} })
+	table.insert(zombieFields, "ToBase")
+end
+SwarmField.define("ToZombies", { goals = standingCores("Red"), closed = {} })
+
+-- A fallen structure frees the ground it stood on (and may remove a goal).
+local STRUCTURE_KINDS = { Tower = true, Barracks = true, Core = true }
+CombatService.Died:Connect(function(target: Instance)
+	if target:IsA("BasePart") and STRUCTURE_KINDS[target:GetAttribute("Kind")] then
+		task.defer(SwarmField.rebuild) -- after Structures.server has removed it
+	end
+end)
+
+-- Which field a new unit follows. Zombies pick an opening at random, weighted
+-- toward shorter walks (1 / distance^2), so both spawn cores feed both openings.
+local function pickField(team: string, start: Vector3): string
+	if team ~= "Red" then
+		return "ToZombies"
+	end
+	local total = 0
+	local weights: { number } = {}
+	for i, name in zombieFields do
+		local distance = SwarmField.distance(name, start)
+		weights[i] = if distance < math.huge then 1 / (distance * distance + 1) else 0
+		total += weights[i]
+	end
+	local roll = math.random() * total
+	for i, name in zombieFields do
+		roll -= weights[i]
+		if roll <= 0 and weights[i] > 0 then
+			return name
+		end
+	end
+	return zombieFields[1]
+end
 
 -- Teams that destroyed the enemy barracks: their later minions are stronger.
 local empowered: { [string]: boolean } = {}
@@ -285,16 +411,13 @@ local function scaledStats(base: MinionStats, multiplier: number): MinionStats
 	return table.freeze(stats)
 end
 
-local function spawnMinion(team: string, baseStats: MinionStats, index: number)
-	local spawnPoint = spawnPoints[team]
-	if not spawnPoint then
-		return
-	end
+local function spawnMinion(spawnPoint: SpawnPoint, baseStats: MinionStats)
+	local team = spawnPoint.team
+	local marker = spawnPoint.marker
 	local stats = scaledStats(baseStats, strengthOf(team))
-	local slot = FORMATION[index]
 	local direction = if team == "Blue" then 1 else -1
-	local behind = if stats.kind == "Archer" then -1.5 * direction else 0 -- archer starts at the back
-	local start = spawnPoint.Position + Vector3.new(behind, 3, slot.side * (1.5 + 2.5 * slot.file))
+	local angle, radius = math.random() * 2 * math.pi, math.sqrt(math.random()) * SPAWN_SCATTER
+	local start = marker.Position + Vector3.new(math.cos(angle) * radius, 3, math.sin(angle) * radius)
 	local facing = start + Vector3.new(direction, 0, 0)
 
 	local model = templates[team .. stats.kind]:Clone()
@@ -312,8 +435,8 @@ local function spawnMinion(team: string, baseStats: MinionStats, index: number)
 		root = root,
 		team = team,
 		stats = stats,
-		waypoints = route(team, slot.side, slot.file),
-		nextWaypoint = 1,
+		field = pickField(team, start),
+		wander = math.random() * 2 - 1,
 		expiresAt = os.clock() + MinionConfig.Lifetime,
 		walkTrack = loadTrack(humanoid, WALK_ANIMATION, true),
 		idleTrack = loadTrack(humanoid, IDLE_ANIMATION, true),
@@ -326,23 +449,36 @@ local function spawnMinion(team: string, baseStats: MinionStats, index: number)
 	}
 	minion.turn.CFrame = root.CFrame.Rotation
 	minion.idleTrack:Play()
-	loadTrack(humanoid, TOOL_HOLD_ANIMATION, true):Play()
+	if stats.kind ~= "Zombie" then -- zombies keep both arms out instead of holding a weapon
+		loadTrack(humanoid, TOOL_HOLD_ANIMATION, true):Play()
+	end
 	table.insert(alive, minion)
 	byModel[model] = minion
 end
 
--- Spawns one wave for both teams, never exceeding the minion cap. If there is not
--- room for everyone, the team that goes first alternates each wave.
+-- Spawns one wave at every spawn marker whose source still stands, never
+-- exceeding the unit cap. Units are added one wave slot at a time across all
+-- markers, so if the cap is hit no spawn point is left empty; the team that
+-- goes first alternates.
+local longestWave = 0
+for _, wave in MinionConfig.Waves do
+	longestWave = math.max(longestWave, #wave)
+end
 local firstTeam = "Blue"
 local function spawnWave()
 	local order: { string } = if firstTeam == "Blue" then { "Blue", "Red" } else { "Red", "Blue" }
 	firstTeam = order[2]
-	for index, stats in MinionConfig.Wave do
+	for index = 1, longestWave do
 		for _, team in order do
-			if #alive >= MinionConfig.MaxAlive then
-				return
+			local stats = MinionConfig.Waves[team] and MinionConfig.Waves[team][index]
+			for _, spawnPoint in spawnPoints do
+				if stats and spawnPoint.team == team and spawnPoint.source and CombatService.isAlive(spawnPoint.source) then
+					if #alive >= MinionConfig.MaxAlive then
+						return
+					end
+					spawnMinion(spawnPoint, stats)
+				end
 			end
-			spawnMinion(team, stats, index)
 		end
 	end
 end
@@ -351,19 +487,52 @@ local function planarDistance(a: Vector3, b: Vector3): number
 	return Vector3.new(a.X - b.X, 0, a.Z - b.Z).Magnitude
 end
 
--- Aggro, breaking any structure lock:
---  * a minion hit by an enemy minion fights back
+-- The point of a structure's footprint closest to a position (at ground level).
+-- Minions measure range to the structure's side, not its centre.
+local function closestPointOn(structure: BasePart, position: Vector3): Vector3
+	local centre, half = structure.Position, structure.Size / 2
+	return Vector3.new(
+		math.clamp(position.X, centre.X - half.X, centre.X + half.X),
+		position.Y,
+		math.clamp(position.Z, centre.Z - half.Z, centre.Z + half.Z)
+	)
+end
+
+-- Where to walk to and swing at: a structure's nearest side, or a unit's centre.
+local function targetPoint(target: Instance, from: Vector3): Vector3?
+	if target:IsA("BasePart") then
+		return closestPointOn(target, from)
+	end
+	local root = target:FindFirstChild("HumanoidRootPart")
+	return if root and root:IsA("BasePart") then root.Position else nil
+end
+
+local function drawAggro(minion: Minion, attacker: Instance)
+	minion.attacker = attacker
+	minion.structure = nil -- fighting back beats a structure lock
+end
+
+-- Aggro (standard rules). Each one breaks a structure lock:
+--  * retaliation: a unit damaged by an enemy (unit, hero or tower) turns on that
+--    attacker and chases it while it stays within RetaliateRange
+--  * call for help: same-team units within HelpRange of the victim that are not
+--    already fighting back join in on the same attacker
 --  * a hero hit by an enemy hero: that hero's minions within RetaliateRange of
 --    the attacker turn on the attacker (MOBA "don't hit heroes near minions")
-CombatService.Damaged:Connect(function(target: Instance, attacker: Instance)
-	if not attacker:IsA("Model") then
-		return
-	end
+CombatService.Damaged:Connect(function(target: Instance, attacker: Instance, attackerTeam: string)
 	local victim = byModel[target]
-	local enemy = byModel[attacker]
-	if victim and enemy and enemy.team ~= victim.team then
-		victim.attacker = enemy.model
-		victim.structure = nil
+	if victim and attackerTeam ~= victim.team and targetPoint(attacker, victim.root.Position) then
+		drawAggro(victim, attacker)
+		for _, ally in alive do
+			if
+				ally ~= victim
+				and ally.team == victim.team
+				and ally.attacker == nil
+				and planarDistance(ally.root.Position, victim.root.Position) <= MinionConfig.HelpRange
+			then
+				drawAggro(ally, attacker)
+			end
+		end
 		return
 	end
 	local heroTeam = target:GetAttribute("Team")
@@ -380,8 +549,7 @@ CombatService.Damaged:Connect(function(target: Instance, attacker: Instance)
 				minion.team == heroTeam
 				and planarDistance(minion.root.Position, attackerRoot.Position) <= MinionConfig.RetaliateRange
 			then
-				minion.attacker = attacker
-				minion.structure = nil
+				drawAggro(minion, attacker)
 			end
 		end
 	end
@@ -396,17 +564,6 @@ for _, item in arena:GetDescendants() do
 	end
 end
 
--- The point of a structure's footprint closest to a position (at ground level).
--- Minions measure range to the structure's side, not its centre.
-local function closestPointOn(structure: BasePart, position: Vector3): Vector3
-	local centre, half = structure.Position, structure.Size / 2
-	return Vector3.new(
-		math.clamp(position.X, centre.X - half.X, centre.X + half.X),
-		position.Y,
-		math.clamp(position.Z, centre.Z - half.Z, centre.Z + half.Z)
-	)
-end
-
 local function canHitStructure(minion: Minion, structure: BasePart): boolean
 	return structure:GetAttribute("Team") ~= minion.team
 		and CombatService.isAlive(structure)
@@ -414,26 +571,22 @@ local function canHitStructure(minion: Minion, structure: BasePart): boolean
 end
 
 -- What this minion fights, and the point it walks to and faces:
+--  0. an enemy that drew its aggro (see the Damaged handler: whoever hit it or
+--     a nearby ally, including towers), while within RetaliateRange: it drops
+--     whatever it was doing, even a structure
 --  1. the structure it is already hitting, until that falls (structure lock)
---  0. an enemy that drew its aggro (see the Damaged handler), while within
---     RetaliateRange: it drops whatever it was doing, even a structure
 --  2. the nearest enemy minion within aggro range
 --  3. the nearest enemy hero within aggro range
 --  4. the nearest enemy structure within aggro range that can take damage
--- Locked structures are walked past. Since minions walk down the lane, they
--- naturally meet the tower, then the barracks, then the core.
+-- Locked structures are walked past.
 local function chooseTarget(minion: Minion): (Instance?, Vector3)
 	local position = minion.root.Position
 	local attacker = minion.attacker
-	local attackerRoot = attacker and attacker:FindFirstChild("HumanoidRootPart")
-	if
-		attacker
-		and attackerRoot
-		and attackerRoot:IsA("BasePart")
-		and CombatService.isAlive(attacker)
-		and planarDistance(attackerRoot.Position, position) <= MinionConfig.RetaliateRange
-	then
-		return attacker, attackerRoot.Position
+	if attacker and CombatService.isAlive(attacker) and not CombatService.isLocked(attacker) then
+		local point = targetPoint(attacker, position)
+		if point and planarDistance(point, position) <= MinionConfig.RetaliateRange then
+			return attacker, point
+		end
 	end
 	minion.attacker = nil
 
@@ -521,6 +674,19 @@ local function attack(minion: Minion, target: Instance, aimPoint: Vector3, now: 
 	end
 
 	if minion.stats.kind ~= "Archer" then
+		if minion.stats.kind == "Zombie" then
+			-- Hand swipe: every client plays it; the hit lands when the claw comes
+			-- down. A zombie killed mid-swing never lands it.
+			local hitDelay = MinionConfig.ZombieSwipeHitDelay
+			local damage, team, zombie = minion.stats.damage, minion.team, minion.model
+			swingEvent:FireAllClients(zombie, hitDelay)
+			task.delay(hitDelay, function()
+				if CombatService.isAlive(zombie) then
+					CombatService.applyDamage(target, damage, zombie, team)
+				end
+			end)
+			return
+		end
 		CombatService.applyDamage(target, minion.stats.damage, minion.model, minion.team)
 		if minion.slashTrack then
 			minion.slashTrack:Play(0.05)
@@ -545,8 +711,46 @@ local function attack(minion: Minion, target: Instance, aimPoint: Vector3, now: 
 	end)
 end
 
+-- Push away from same-team neighbours that are too close (stronger the closer
+-- they are). Flat vector; zero when nobody is near.
+local function separation(minion: Minion): Vector3
+	local position = minion.root.Position
+	local push = Vector3.zero
+	for _, other in alive do
+		if other ~= minion and other.team == minion.team then
+			local offset = Vector3.new(position.X - other.root.Position.X, 0, position.Z - other.root.Position.Z)
+			local distance = offset.Magnitude
+			if distance < SEPARATION_RADIUS then
+				-- Exactly on top of each other: pick any direction to split.
+				local away = if distance > 0.05 then offset / distance else Vector3.new(math.random() - 0.5, 0, math.random() - 0.5).Unit
+				push += away * (1 - distance / SEPARATION_RADIUS)
+			end
+		end
+	end
+	return push
+end
+
+-- Where the swarm wants this unit to go when it has no enemy: downhill on its
+-- flow field, bent sideways by its own slowly changing drift, and pushed apart
+-- from its neighbours. Nil when it has arrived (or has no goal left).
+local function swarmStep(minion: Minion, push: Vector3): Vector3?
+	local position = minion.root.Position
+	local flow = SwarmField.direction(minion.field, position)
+	if not flow then
+		return nil
+	end
+	minion.wander = math.clamp(minion.wander + (math.random() * 2 - 1) * WANDER_CHANGE, -1, 1)
+	local sideways = Vector3.new(-flow.Z, 0, flow.X)
+	local steer = flow + sideways * minion.wander * WANDER_WEIGHT + push * SEPARATION_WEIGHT
+	if steer.Magnitude < 0.05 then
+		steer = flow
+	end
+	return position + steer.Unit * STEER_AHEAD
+end
+
 local function updateMinion(minion: Minion, now: number)
 	local position = minion.root.Position
+	local push = separation(minion)
 	local enemy, aimPoint = chooseTarget(minion)
 	local target: Vector3? = nil
 	if enemy then
@@ -555,18 +759,25 @@ local function updateMinion(minion: Minion, now: number)
 		local slack = if minion.holding then HOLD_SLACK else 0
 		minion.holding = planarDistance(aimPoint, position) <= minion.stats.attackRange + slack
 		if not minion.holding then
-			target = aimPoint
-		elseif now >= minion.nextAttackAt then
-			attack(minion, enemy, aimPoint, now)
+			-- Approach while spreading out, so a crowd surrounds the target
+			-- instead of piling onto one spot.
+			local toward = Vector3.new(aimPoint.X - position.X, 0, aimPoint.Z - position.Z)
+			local steer = (if toward.Magnitude > 0.05 then toward.Unit else Vector3.zero) + push * SEPARATION_WEIGHT
+			target = if steer.Magnitude > 0.05 then position + steer.Unit * math.min(STEER_AHEAD, toward.Magnitude) else aimPoint
+		else
+			if now >= minion.nextAttackAt then
+				attack(minion, enemy, aimPoint, now)
+			end
+			-- Standing and fighting: still shuffle apart if packed onto a neighbour.
+			if push.Magnitude > 0.5 then
+				minion.humanoid:MoveTo(position + push.Unit * OVERLAP_NUDGE)
+				setWalking(minion, false)
+				return
+			end
 		end
 	else
 		minion.holding = false
-		local waypoint = minion.waypoints[minion.nextWaypoint]
-		if waypoint and planarDistance(waypoint, position) < WAYPOINT_REACHED then
-			minion.nextWaypoint += 1
-			waypoint = minion.waypoints[minion.nextWaypoint]
-		end
-		target = waypoint
+		target = swarmStep(minion, push)
 	end
 
 	if target then
