@@ -158,4 +158,64 @@ function UiTheme.floatingText(label: TextLabel)
 	label.TextStrokeTransparency = 0.55
 end
 
+-- A circular cooldown cover for a slot: a dark wedge that sweeps away like a
+-- clock hand, with the seconds left in the centre. Returns a function taking
+-- the share of the cooldown still left (1 = just used, 0 = ready) and the text.
+-- Built from two half-panels, each showing a rotated hard-edged gradient; a
+-- CanvasGroup clips it to the slot's rounded corners.
+local SHARP_HALF = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0),
+	NumberSequenceKeypoint.new(0.499, 0),
+	NumberSequenceKeypoint.new(0.5, 1),
+	NumberSequenceKeypoint.new(1, 1),
+})
+
+function UiTheme.radialCover(parent: GuiObject, radius: number?): (number, string) -> ()
+	local group = Instance.new("CanvasGroup")
+	group.Name = "Cooldown"
+	group.Size = UDim2.fromScale(1, 1)
+	group.BackgroundTransparency = 1
+	group.ZIndex = 2
+	group.Parent = parent
+	UiTheme.corner(group, radius)
+
+	local gradients: { UIGradient } = {}
+	for index, side in { 1, 0 } do -- right half, then left half
+		local half = Instance.new("Frame")
+		half.Position = UDim2.fromScale(side * 0.5, 0)
+		half.Size = UDim2.fromScale(0.5, 1)
+		half.BackgroundTransparency = 1
+		half.ClipsDescendants = true
+		half.Parent = group
+		local fill = Instance.new("Frame")
+		fill.Position = UDim2.fromScale(-side, 0)
+		fill.Size = UDim2.fromScale(2, 1)
+		fill.BackgroundColor3 = UiTheme.Surface
+		fill.BackgroundTransparency = 0.2
+		fill.BorderSizePixel = 0
+		fill.Parent = half
+		local gradient = Instance.new("UIGradient")
+		gradient.Transparency = SHARP_HALF
+		gradient.Parent = fill
+		gradients[index] = gradient
+	end
+
+	local label = UiTheme.text(parent, UiTheme.TextSize.Value, UiTheme.Font.Heavy)
+	label.Name = "CooldownText"
+	label.Size = UDim2.fromScale(1, 1)
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.ZIndex = 3
+	UiTheme.floatingText(label)
+
+	-- The wedge covers the angle [0, A] clockwise from 12 o'clock, A = left * 360.
+	-- Each half shows its part of it by rotating its gradient to A (clamped to its half).
+	return function(left: number, text: string)
+		local angle = math.clamp(left, 0, 1) * 360
+		group.Visible = angle > 0
+		gradients[1].Rotation = math.min(angle, 180)
+		gradients[2].Rotation = math.max(angle, 180)
+		label.Text = text
+	end
+end
+
 return table.freeze(UiTheme)

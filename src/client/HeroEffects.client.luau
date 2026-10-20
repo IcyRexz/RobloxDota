@@ -14,16 +14,15 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
+local FloatingText = require(ReplicatedStorage.Shared.FloatingText)
 
 local BOLT_COLOR = Color3.fromRGB(150, 210, 255)
 local BOLT_SEGMENTS = 6
 local BOLT_JITTER = 1.2 -- studs a kink may stray from the straight line
 local BOLT_WIDTH = 0.25
-local BOLT_SECONDS = 0.18
+local BOLT_SECONDS = 0.28 -- a little longer so each hit reads (owner 2026-10-21)
 
-local HIT_FLASH_SECONDS = 0.12
-local NUMBER_RISE = 3 -- studs the damage number floats up
-local NUMBER_SECONDS = 0.7
+local HIT_FLASH_SECONDS = 0.2
 -- Damage numbers follow the UI design system (docs/11_UI_DESIGN.md).
 local DEALT_COLOR = UiTheme.Text
 local TAKEN_COLOR = UiTheme.Enemy
@@ -120,42 +119,13 @@ local function flashTarget(target: Instance)
 	tween:Play()
 end
 
+-- Bigger hits get bigger numbers (up to +10 px).
+local function numberSize(amount: number): number
+	return 22 + math.min(10, math.floor(amount / 30))
+end
+
 local function showNumber(at: Vector3, amount: number, color: Color3)
-	local anchor = Instance.new("Part")
-	anchor.Transparency = 1
-	anchor.Size = Vector3.one * 0.1
-	anchor.Anchored = true
-	anchor.CanCollide = false
-	anchor.CanQuery = false
-	anchor.CanTouch = false
-	-- A little sideways scatter so quick hits do not stack on top of each other.
-	anchor.Position = at + Vector3.new((math.random() - 0.5) * 2, 2.5, (math.random() - 0.5) * 2)
-	anchor.Parent = Workspace
-
-	local billboard = Instance.new("BillboardGui")
-	billboard.Size = UDim2.fromOffset(80, 30)
-	billboard.AlwaysOnTop = true
-	billboard.LightInfluence = 0
-	billboard.Adornee = anchor
-	billboard.Parent = anchor
-	local label = Instance.new("TextLabel")
-	label.BackgroundTransparency = 1
-	label.Size = UDim2.fromScale(1, 1)
-	label.FontFace = UiTheme.Font.Heavy
-	label.TextSize = 22
-	label.TextColor3 = color
-	label.TextStrokeColor3 = UiTheme.Surface
-	label.TextStrokeTransparency = 0.4
-	label.Text = tostring(math.round(amount))
-	label.Parent = billboard
-
-	local info = TweenInfo.new(NUMBER_SECONDS, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	TweenService:Create(anchor, info, { Position = anchor.Position + Vector3.new(0, NUMBER_RISE, 0) }):Play()
-	local fade = TweenService:Create(label, info, { TextTransparency = 1, TextStrokeTransparency = 1 })
-	fade.Completed:Once(function()
-		anchor:Destroy()
-	end)
-	fade:Play()
+	FloatingText.show(at, tostring(math.round(amount)), { color = color, size = numberSize(amount) })
 end
 
 attackEvent.OnClientEvent:Connect(function(attacker: unknown, target: unknown, dealt: unknown, shotEnd: unknown)

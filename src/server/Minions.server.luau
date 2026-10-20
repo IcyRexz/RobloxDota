@@ -11,8 +11,10 @@
 -- flow-field grid; otherwise it follows a short detour around the obstacle.
 -- A unit that stops making progress gets a few seconds of pure flow/detour
 -- steering (no drift or crowd push) to free itself.
--- Also: fighting enemy units, heroes and structures, dying, despawning, and
--- the inhibitor (barracks) bonus.
+-- Also: fighting enemy units, heroes and structures, dying, despawning, the
+-- inhibitor (barracks) bonus, and obeying stuns and slows from hero abilities
+-- (UnitEffects): a stunned unit stands still and does not attack; a slowed
+-- unit walks slower.
 
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
@@ -21,6 +23,7 @@ local Workspace = game:GetService("Workspace")
 
 local CombatService = require(script.Parent.CombatService)
 local SwarmField = require(script.Parent.SwarmField)
+local UnitEffects = require(script.Parent.UnitEffects)
 local Config = require(ReplicatedStorage.Shared.Config)
 local JointPose = require(ReplicatedStorage.Shared.JointPose)
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
@@ -748,8 +751,8 @@ local function attack(minion: Minion, target: Instance, aimPoint: Vector3, now: 
 			local reach = minion.stats.attackRange + HOLD_SLACK
 			swingEvent:FireAllClients(zombie, hitDelay)
 			task.delay(hitDelay, function()
-				if not CombatService.isAlive(zombie) then
-					return
+				if not CombatService.isAlive(zombie) or UnitEffects.isStunned(zombie) then
+					return -- dead or stunned mid-swing: the claw never lands
 				end
 				local point = targetPoint(target, zombieRoot.Position)
 				if point and planarDistance(point, zombieRoot.Position) <= reach then
@@ -773,7 +776,7 @@ local function attack(minion: Minion, target: Instance, aimPoint: Vector3, now: 
 	local damage, team, archer = minion.stats.damage, minion.team, minion.model
 	shotEvent:FireAllClients(minion.model, target, drawTime, flightTime)
 	task.delay(drawTime, function()
-		if not CombatService.isAlive(minion.model) then
+		if not CombatService.isAlive(minion.model) or UnitEffects.isStunned(minion.model) then
 			return
 		end
 		task.delay(flightTime, function()
@@ -869,6 +872,18 @@ end
 
 local function updateMinion(minion: Minion, now: number)
 	local position = minion.root.Position
+	-- Stunned (or flying from a knockback): stand still, no attacks.
+	if UnitEffects.isStunned(minion.model) then
+		minion.humanoid:MoveTo(position)
+		setWalking(minion, false)
+		trackProgress(minion, false, now)
+		return
+	end
+	-- Slowed by an ability: walk at a share of the normal speed.
+	local speed = minion.stats.speed * UnitEffects.speedFactor(minion.model)
+	if minion.humanoid.WalkSpeed ~= speed then
+		minion.humanoid.WalkSpeed = speed
+	end
 	local unsticking = now < minion.unstickUntil
 	local push = if unsticking then Vector3.zero else separation(minion)
 	local enemy, aimPoint = chooseTarget(minion)

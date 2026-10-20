@@ -27,6 +27,7 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GroundRing = require(ReplicatedStorage.Shared.GroundRing)
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
@@ -45,6 +46,13 @@ local DEFAULT_TEAM = Config.Teams.Defenders
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local actionEvent = ReplicatedStorage:WaitForChild("HeroAction") :: RemoteEvent
+
+-- The enemy under the red marker, shared with other scripts on this device
+-- (TargetInfo.client shows its face, name and health). Made here, on this
+-- device only: it is never sent to or trusted by the server.
+local aimValue = Instance.new("ObjectValue")
+aimValue.Name = "AimTarget"
+aimValue.Parent = player
 
 local function localTeam(): string
 	local team = player:GetAttribute("Team")
@@ -103,20 +111,21 @@ type Candidate = { target: Instance, point: Vector3, angle: number }
 local assistTarget: Instance? = nil -- the enemy with the red marker
 local assistPoint: Vector3? = nil -- where to aim; nil = straight along the crosshair
 
--- Picks the enemy nearest to the crosshair, if any is close enough.
-local function updateAssist(character: Model, root: BasePart)
+-- The enemy a shot of `range` studs would go for, and where to aim (nil =
+-- straight along the crosshair). `keep` is held a little longer so the choice
+-- does not flicker. Used by the basic attack (Pulse.Range) and Ball Lightning.
+local function findTarget(character: Model, root: BasePart, range: number, keep: Instance?): (Instance?, Vector3?)
 	local camera = Workspace.CurrentCamera
 	local eye, look = camera.CFrame.Position, camera.CFrame.LookVector
-	-- 1. What a click straight along the crosshair would hit (the server's rule).
-	local direct = Targeting.castShot(character, localTeam(), look, Pulse.Range, function(target)
+	-- 1. What a shot straight along the crosshair would hit (the server's rule).
+	local direct = Targeting.castShot(character, localTeam(), look, range, function(target)
 		return isEnemy(character, target)
 	end)
 	if direct then
-		assistTarget, assistPoint = direct, nil
-		return
+		return direct, nil
 	end
-	-- 2. Otherwise, aim assist: an enemy near the crosshair. The server casts the
-	-- shot from the head, Pulse.Range studs long.
+	-- 2. Otherwise, aim assist: an enemy near the crosshair. The server casts
+	-- from the head, `range` studs long.
 	local head = character:FindFirstChild("Head")
 	local shotFrom = if head and head:IsA("BasePart") then head.Position else root.Position
 	local candidates: { Candidate } = {}
@@ -124,10 +133,10 @@ local function updateAssist(character: Model, root: BasePart)
 		for _, target in group do
 			if isEnemy(character, target) then
 				local point = aimPointFor(target, eye, look)
-				if point and (point - shotFrom).Magnitude <= Pulse.Range then
+				if point and (point - shotFrom).Magnitude <= range then
 					local radius = if target:IsA("BasePart") then 0 else UNIT_RADIUS
 					local angle = offAngle(eye, look, point, radius)
-					local limit = if target == assistTarget then ASSIST_KEEP_DEGREES else ASSIST_DEGREES
+					local limit = if target == keep then ASSIST_KEEP_DEGREES else ASSIST_DEGREES
 					if angle <= limit then
 						table.insert(candidates, { target = target, point = point, angle = angle })
 					end
@@ -141,11 +150,15 @@ local function updateAssist(character: Model, root: BasePart)
 	-- Line-of-sight checks (raycasts) only for the few that passed, best first.
 	for _, candidate in candidates do
 		if Targeting.hasLineOfSight(candidate.target, eye, candidate.point) then
-			assistTarget, assistPoint = candidate.target, candidate.point
-			return
+			return candidate.target, candidate.point
 		end
 	end
-	assistTarget, assistPoint = nil, nil
+	return nil, nil
+end
+
+-- The basic attack's marker target, refreshed every frame.
+local function updateAssist(character: Model, root: BasePart)
+	assistTarget, assistPoint = findTarget(character, root, Pulse.Range, assistTarget)
 end
 
 -- Marker -----------------------------------------------------------------------
@@ -206,6 +219,137 @@ local function drawMarker(target: Instance?, deltaTime: number)
 	highlight.Parent = playerGui
 end
 
+-- Abilities (owner 2026-10-21) -------------------------------------------------------
+--  1 Lightning Strike: hold 1 to show the area on the ground where you aim
+--    (clamped to its range), release to cast there.
+--  2 Storm Dash: dash where the camera faces. This device moves the character
+--    (Roblox gives each player their character's movement); the server checks
+--    the cooldown and does the knockback where you land.
+--  3 Ball Lightning: casts at the enemy you are aiming at (same rule as the red
+--    marker, at the ball's longer range); nothing happens without a target.
+-- Each needs its talent (the server's Has<Ability> attribute) and must be off
+-- cooldown (<Ability>ReadyAt on the character). Skill keys do nothing while the
+-- Character Menu is open (it uses 1/2/3 to pick talents).
+
+local Skills = Config.Hero.Skills
+local STRIKE_COLOR = Color3.fromRGB(150, 210, 255) -- the lightning's colour (a world effect)
+local LOCAL_GUARD = 0.3 -- seconds a key ignores repeats until the server's cooldown arrives
+
+local lastCast: { [string]: number } = {}
+
+local function hasSkill(id: string): boolean
+	return player:GetAttribute("Has" .. id) == true
+end
+
+local function skillReady(character: Model, id: string): boolean
+	local readyAt = character:GetAttribute(id .. "ReadyAt")
+	if type(readyAt) == "number" and Workspace:GetServerTimeNow() < readyAt then
+		return false
+	end
+	return os.clock() - (lastCast[id] or -math.huge) >= LOCAL_GUARD
+end
+
+local function menuOpen(): boolean
+	local menu = playerGui:FindFirstChild("CharacterMenu")
+	return menu ~= nil and menu:IsA("ScreenGui") and menu.Enabled
+end
+
+-- The area indicator: a dashed rim with a faint fill, exactly Radius wide,
+-- lying on the ground under it (GroundRing follows hills and the base floor).
+local strikeArea = GroundRing.new(STRIKE_COLOR, Skills.Strike.Radius, 0.1, 0.55)
+
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Exclude
+
+-- Where the strike would land: where the crosshair meets the ground, pulled back
+-- to Range (flat) from the hero, then dropped onto the ground.
+local function strikePoint(character: Model, root: BasePart): Vector3
+	local ignore: { Instance } = { character, strikeArea.model }
+	local minions = Workspace:FindFirstChild("Minions")
+	if minions then
+		table.insert(ignore, minions)
+	end
+	for _, other in Players:GetPlayers() do
+		if other.Character then
+			table.insert(ignore, other.Character)
+		end
+	end
+	groundParams.FilterDescendantsInstances = ignore
+	local camera = Workspace.CurrentCamera
+	local eye, look = camera.CFrame.Position, camera.CFrame.LookVector
+	local hit = Workspace:Raycast(eye, look * (Skills.Strike.Range * 3), groundParams)
+	local point = if hit then hit.Position else eye + look * Skills.Strike.Range
+	local flat = Vector3.new(point.X - root.Position.X, 0, point.Z - root.Position.Z)
+	if flat.Magnitude > Skills.Strike.Range then
+		point = root.Position + flat.Unit * Skills.Strike.Range
+	end
+	local down = Workspace:Raycast(Vector3.new(point.X, root.Position.Y + 40, point.Z), Vector3.new(0, -120, 0), groundParams)
+	return if down then down.Position else Vector3.new(point.X, root.Position.Y - 3, point.Z)
+end
+
+local function drawStrikeArea(point: Vector3?)
+	if point then
+		strikeArea:place(point)
+	else
+		strikeArea:hide()
+	end
+end
+
+local aimingStrike = false
+
+local function castStrike(character: Model)
+	local root = Targeting.rootOf(character)
+	if not root or not skillReady(character, "Strike") then
+		return
+	end
+	lastCast.Strike = os.clock()
+	actionEvent:FireServer("Strike", strikePoint(character, root))
+end
+
+local function castDash(character: Model)
+	local root = Targeting.rootOf(character)
+	if not root or not skillReady(character, "Dash") then
+		return
+	end
+	local look = Workspace.CurrentCamera.CFrame.LookVector
+	local flat = Vector3.new(look.X, 0, look.Z)
+	if flat.Magnitude < 0.1 then
+		flat = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+	end
+	local direction = flat.Unit
+	lastCast.Dash = os.clock()
+	-- Push the character along the ground for the dash's duration (gravity still applies).
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "DashAttachment"
+	attachment.Parent = root
+	local push = Instance.new("LinearVelocity")
+	push.Name = "Dash"
+	push.Attachment0 = attachment
+	push.RelativeTo = Enum.ActuatorRelativeTo.World
+	push.ForceLimitMode = Enum.ForceLimitMode.PerAxis
+	push.MaxAxesForce = Vector3.new(1e6, 0, 1e6)
+	push.VectorVelocity = direction * Skills.Dash.Speed
+	push.Parent = root
+	task.delay(Skills.Dash.Duration, function()
+		push:Destroy()
+		attachment:Destroy()
+	end)
+	actionEvent:FireServer("Dash", direction)
+end
+
+local function castBall(character: Model)
+	local root = Targeting.rootOf(character)
+	if not root or not skillReady(character, "Ball") then
+		return
+	end
+	local target = findTarget(character, root, Skills.Ball.Range, nil)
+	if not target then
+		return -- needs an enemy under the crosshair (or aim assist)
+	end
+	lastCast.Ball = os.clock()
+	actionEvent:FireServer("Ball", target)
+end
+
 -- Attacking --------------------------------------------------------------------
 
 local holding = 0 -- inputs currently holding attack (mouse, Attack slot)
@@ -262,19 +406,26 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	local root = character and Targeting.rootOf(character)
 	if not (character and humanoid and root and humanoid.Health > 0) then
 		assistTarget, assistPoint = nil, nil
+		aimingStrike = false
 		drawMarker(nil, deltaTime)
+		drawStrikeArea(nil)
 		if player:GetAttribute("AimTarget") then
 			player:SetAttribute("AimTarget", false)
 		end
+		aimValue.Value = nil
 		return
 	end
 	updateAssist(character, root)
 	drawMarker(assistTarget, deltaTime)
+	drawStrikeArea(if aimingStrike then strikePoint(character, root) else nil)
 	-- Tells the crosshair (Crosshair.client) to turn red while the marker is on.
 	-- A client-set attribute: it stays on this device and is never trusted by the server.
 	local aiming = assistTarget ~= nil
 	if player:GetAttribute("AimTarget") ~= aiming then
 		player:SetAttribute("AimTarget", aiming)
+	end
+	if aimValue.Value ~= assistTarget then
+		aimValue.Value = assistTarget
 	end
 	if holding > 0 then
 		shoot(character)
@@ -296,13 +447,34 @@ local function release()
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton1 then
+	if gameProcessed then
+		return
+	end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		press()
+		return
+	end
+	local character = player.Character
+	if not character or menuOpen() then
+		return
+	end
+	if input.KeyCode == Enum.KeyCode.One and hasSkill("Strike") then
+		aimingStrike = true -- shows the area; the cast happens on release
+	elseif input.KeyCode == Enum.KeyCode.Two and hasSkill("Dash") then
+		castDash(character)
+	elseif input.KeyCode == Enum.KeyCode.Three and hasSkill("Ball") then
+		castBall(character)
 	end
 end)
 UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 and holding > 0 then
 		release()
+	elseif input.KeyCode == Enum.KeyCode.One and aimingStrike then
+		aimingStrike = false
+		local character = player.Character
+		if character and not menuOpen() then
+			castStrike(character)
+		end
 	end
 end)
 

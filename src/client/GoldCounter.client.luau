@@ -11,12 +11,11 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
+local FloatingText = require(ReplicatedStorage.Shared.FloatingText)
 
 local space = UiTheme.space
 local AMOUNT_SIZE = UiTheme.TextSize.Value
-local POP_SIZE = AMOUNT_SIZE + 6 -- the number briefly grows when gold comes in
-local POPUP_RISE = 4 -- studs the "+1" floats up
-local POPUP_SECONDS = 0.9
+local POP_SIZE = AMOUNT_SIZE + 8 -- the number briefly grows when gold comes in
 local MAX_POPUP_DISTANCE = 300 -- ignore positions far from you (bad data)
 
 local player = Players.LocalPlayer
@@ -68,47 +67,21 @@ local function refresh()
 	local gold = if type(value) == "number" and value == value and value >= 0 and value < 1e12 then math.floor(value) else 0
 	amount.Text = tostring(gold)
 	if gold > shown then
+		-- Pop: grow, then spring back, so a gain is noticed.
 		amount.TextSize = POP_SIZE
-		TweenService:Create(amount, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextSize = AMOUNT_SIZE }):Play()
+		amount.TextColor3 = UiTheme.Gold
+		local settle = TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+		TweenService:Create(amount, settle, { TextSize = AMOUNT_SIZE }):Play()
+		TweenService:Create(amount, TweenInfo.new(0.6), { TextColor3 = UiTheme.Text }):Play()
 	end
 	shown = gold
 end
 refresh()
 player:GetAttributeChangedSignal("Gold"):Connect(refresh)
 
--- "+N" floating up from where the gold was earned.
+-- "+N" floating up from where the gold was earned (shared FloatingText motion).
 local function popup(gained: number, at: Vector3)
-	local anchor = Instance.new("Part")
-	anchor.Name = "GoldPopup"
-	anchor.Transparency = 1
-	anchor.Size = Vector3.one * 0.1
-	anchor.Anchored = true
-	anchor.CanCollide = false
-	anchor.CanQuery = false
-	anchor.CanTouch = false
-	anchor.Position = at + Vector3.new(0, 3.5, 0)
-	anchor.Parent = Workspace
-
-	local billboard = Instance.new("BillboardGui")
-	billboard.Size = UDim2.fromOffset(90, 32)
-	billboard.AlwaysOnTop = true
-	billboard.LightInfluence = 0
-	billboard.Adornee = anchor
-	billboard.Parent = anchor
-	local label = UiTheme.text(billboard, 22, UiTheme.Font.Heavy)
-	label.Size = UDim2.fromScale(1, 1)
-	label.TextXAlignment = Enum.TextXAlignment.Center
-	label.TextColor3 = UiTheme.Gold
-	label.Text = `+{gained}`
-	UiTheme.floatingText(label)
-
-	local info = TweenInfo.new(POPUP_SECONDS, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	TweenService:Create(anchor, info, { Position = anchor.Position + Vector3.new(0, POPUP_RISE, 0) }):Play()
-	local fade = TweenService:Create(label, info, { TextTransparency = 1, TextStrokeTransparency = 1 })
-	fade.Completed:Once(function()
-		anchor:Destroy()
-	end)
-	fade:Play()
+	FloatingText.show(at, `+{gained}`, { color = UiTheme.Gold, size = 26, lift = 3.5, scatter = 0.3 })
 end
 
 local gainedEvent = ReplicatedStorage:WaitForChild("GoldGained") :: RemoteEvent

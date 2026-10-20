@@ -1,12 +1,14 @@
 --!strict
 -- Hero HUD on each player's own screen, in the game's UI design system
 -- (docs/11_UI_DESIGN.md, values from UiTheme):
---  * bottom centre, your own hero: a level ring (gold), hero name and
---    "current / max" above a thin health bar, a thin gold XP bar, and four
---    ability slots with cooldown covers (only the basic attack is live).
+--  * bottom centre, your own hero: a level ring, hero name and "current / max"
+--    above a thin health bar, a thin gold XP bar with "xp / next XP" beside it,
+--    and four ability slots with cooldown covers. The basic attack is always
+--    live; abilities 1-3 light up once their talent is taken (Has<Ability>).
 --    Level and XP follow the server's Level / Xp / XpToNext Player attributes.
---    While a talent pick is waiting (UpgradesPending > 0) a gold "U" pill sits
---    above the ring; clicking the ring (or pressing U) opens the Character Menu
+--    The ring is quiet normally and turns gold with a soft pulsing glow only
+--    while a talent pick is waiting (UpgradesPending > 0), with a gold "U" pill
+--    above it; clicking the ring (or pressing U) opens the Character Menu
 --    (CharacterMenu.client).
 --  * over every other hero's head: their name above a thin health bar (green
 --    your side, red the enemy). Your own has none: the camera is first person.
@@ -113,7 +115,8 @@ screen.ResetOnSpawn = false
 screen.Parent = playerGui
 
 local BLOCK_X = RING_SIZE + space(3)
-local SLOTS_Y = space(11) -- below the name, health bar and XP bar
+local SLOTS_Y = space(12) -- below the name, health bar and XP bar
+local XP_TEXT_WIDTH = 76 -- room right of the XP bar for "xp / next XP"
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
 panel.AnchorPoint = Vector2.new(0.5, 1)
@@ -124,14 +127,46 @@ panel.Parent = screen
 UiTheme.applyScale(panel)
 
 -- Level ring (the badge). Named LevelBadge / OpenUpgrades for CharacterMenu.client.
+-- Soft gold glow behind the ring, shown (pulsing) only while a pick is waiting.
+local GLOW_SIZE = RING_SIZE + space(4)
+local glow = Instance.new("Frame")
+glow.Name = "Glow"
+glow.AnchorPoint = Vector2.new(0.5, 0.5)
+glow.Position = UDim2.fromOffset(RING_SIZE / 2, RING_SIZE / 2)
+glow.Size = UDim2.fromOffset(GLOW_SIZE, GLOW_SIZE)
+glow.BackgroundColor3 = UiTheme.Gold
+glow.BackgroundTransparency = 0.8
+glow.BorderSizePixel = 0
+glow.Visible = false
+glow.Parent = panel
+UiTheme.corner(glow, GLOW_SIZE // 2)
+local glowPulse = TweenService:Create(
+	glow,
+	TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+	{ BackgroundTransparency = 0.95, Size = UDim2.fromOffset(GLOW_SIZE + space(2), GLOW_SIZE + space(2)) }
+)
+
 local badge = UiTheme.panel(panel, nil, RING_SIZE // 2)
 badge.Name = "LevelBadge"
 badge.Size = UDim2.fromOffset(RING_SIZE, RING_SIZE)
+badge.ZIndex = 2
 local ring = Instance.new("UIStroke")
 ring.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-ring.Color = UiTheme.Gold
-ring.Thickness = 2
 ring.Parent = badge
+
+-- Quiet white ring normally; gold, thicker and glowing while a pick is waiting.
+local function setPickWaiting(waiting: boolean)
+	ring.Color = if waiting then UiTheme.Gold else UiTheme.Text
+	ring.Transparency = if waiting then 0 else 0.75
+	ring.Thickness = if waiting then 2.5 else 1.5
+	glow.Visible = waiting
+	if waiting then
+		glowPulse:Play()
+	else
+		glowPulse:Cancel()
+	end
+end
+setPickWaiting(false)
 local levelCaption = UiTheme.text(badge, 9, Font.Bold, Strength.Label)
 levelCaption.Position = UDim2.fromOffset(0, 9)
 levelCaption.Size = UDim2.new(1, 0, 0, 10)
@@ -150,20 +185,58 @@ badgeButton.Size = UDim2.fromScale(1, 1)
 badgeButton.ZIndex = 3
 badgeButton.Parent = badge
 
--- Gold "U" pill above the ring while a talent pick is waiting.
+-- "LEVEL UP" pill above the ring while a talent pick is waiting: a gold pill
+-- with a dark key chip showing U (opens the Character Menu), and "x2" when
+-- several picks are queued. It bobs gently so it is noticed without shouting.
 local pickHint = Instance.new("Frame")
 pickHint.Name = "PickHint"
-pickHint.AnchorPoint = Vector2.new(0.5, 1)
-pickHint.Position = UDim2.new(0.5, 0, 0, -space(1))
-pickHint.Size = UDim2.fromOffset(space(15), 18)
+pickHint.AnchorPoint = Vector2.new(0, 1)
+pickHint.Position = UDim2.fromOffset(0, -space(2))
+pickHint.Size = UDim2.fromOffset(0, 22)
+pickHint.AutomaticSize = Enum.AutomaticSize.X
 pickHint.BackgroundColor3 = UiTheme.Gold
 pickHint.BorderSizePixel = 0
 pickHint.Visible = false
-pickHint.Parent = badge
-UiTheme.corner(pickHint, 9)
-local pickHintText = UiTheme.text(pickHint, Size.Caption, Font.Heavy)
-pickHintText.Size = UDim2.fromScale(1, 1)
-pickHintText.TextXAlignment = Enum.TextXAlignment.Center
+pickHint.ZIndex = 4
+pickHint.Parent = panel
+UiTheme.corner(pickHint, 11)
+local pickPad = Instance.new("UIPadding")
+pickPad.PaddingLeft = UDim.new(0, 3)
+pickPad.PaddingRight = UDim.new(0, space(2))
+pickPad.Parent = pickHint
+local pickLayout = Instance.new("UIListLayout")
+pickLayout.FillDirection = Enum.FillDirection.Horizontal
+pickLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+pickLayout.Padding = UDim.new(0, space(1) + 2)
+pickLayout.SortOrder = Enum.SortOrder.LayoutOrder
+pickLayout.Parent = pickHint
+local keyChip = Instance.new("Frame")
+keyChip.LayoutOrder = 1
+keyChip.Size = UDim2.fromOffset(16, 16)
+keyChip.BackgroundColor3 = UiTheme.OnGold
+keyChip.BorderSizePixel = 0
+keyChip.ZIndex = 5
+keyChip.Parent = pickHint
+UiTheme.corner(keyChip, 8)
+local keyChipText = UiTheme.text(keyChip, Size.Caption, Font.Heavy)
+keyChipText.Size = UDim2.fromScale(1, 1)
+keyChipText.TextXAlignment = Enum.TextXAlignment.Center
+keyChipText.TextColor3 = UiTheme.Gold
+keyChipText.Text = "U"
+keyChipText.ZIndex = 6
+local pickHintText = UiTheme.text(pickHint, Size.Small, Font.Heavy)
+pickHintText.LayoutOrder = 2
+pickHintText.Size = UDim2.fromOffset(0, 22)
+pickHintText.AutomaticSize = Enum.AutomaticSize.X
+pickHintText.TextTruncate = Enum.TextTruncate.None
+pickHintText.TextColor3 = UiTheme.OnGold
+pickHintText.ZIndex = 5
+pickHintText.Text = "LEVEL UP"
+local pickBob = TweenService:Create(
+	pickHint,
+	TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+	{ Position = UDim2.fromOffset(0, -space(3)) }
+)
 pickHintText.TextColor3 = UiTheme.OnGold
 pickHintText.Text = "U  talent"
 
@@ -188,24 +261,55 @@ UiTheme.floatingText(hudText)
 local hudBar = healthBar(block, UiTheme.Bar.Health)
 hudBar.track.Position = UDim2.fromOffset(0, space(5))
 
+local XP_Y = space(5) + UiTheme.Bar.Health + space(2)
 local xpBar = UiTheme.bar(block, UiTheme.Bar.Xp, UiTheme.Gold)
 xpBar.track.Name = "XpBar"
-xpBar.track.Position = UDim2.fromOffset(0, space(5) + UiTheme.Bar.Health + space(1))
+xpBar.track.Position = UDim2.fromOffset(0, XP_Y)
+xpBar.track.Size = UDim2.new(1, -XP_TEXT_WIDTH, 0, UiTheme.Bar.Xp)
 xpBar.fill.Size = UDim2.fromScale(0, 1)
+-- "12 / 30 XP" right of the bar (labels sit beside bars, never inside).
+local xpText = UiTheme.text(block, Size.Caption, Font.Bold, Strength.Label)
+xpText.Name = "XpText"
+xpText.AnchorPoint = Vector2.new(1, 0.5)
+xpText.Position = UDim2.new(1, 0, 0, XP_Y + UiTheme.Bar.Xp / 2)
+xpText.Size = UDim2.fromOffset(XP_TEXT_WIDTH - space(2), 14)
+xpText.TextXAlignment = Enum.TextXAlignment.Right
+UiTheme.floatingText(xpText)
 
 local function refreshXp()
 	local level = readWholeNumber("Level") or 1
 	local xp = readWholeNumber("Xp") or 0
 	local toNext = readWholeNumber("XpToNext")
 	levelText.Text = tostring(math.max(level, 1))
-	xpBar.fill.Size = UDim2.fromScale(if toNext and toNext > 0 then math.clamp(xp / toNext, 0, 1) else 0, 1)
-	pickHint.Visible = (readWholeNumber("UpgradesPending") or 0) > 0
+	xpBar.fill.Size = UDim2.fromScale(if toNext and toNext > 0 then math.clamp(xp / toNext, 0, 1) else 1, 1)
+	xpText.Text = if toNext and toNext > 0 then `{xp} / {toNext} XP` else "MAX"
+	local picks = readWholeNumber("UpgradesPending") or 0
+	local waiting = picks > 0
+	pickHintText.Text = if picks > 1 then `LEVEL UP  x{picks}` else "LEVEL UP"
+	if waiting ~= pickHint.Visible then
+		pickHint.Visible = waiting
+		if waiting then
+			pickBob:Play()
+		else
+			pickBob:Cancel()
+			pickHint.Position = UDim2.fromOffset(0, -space(2))
+		end
+	end
+	setPickWaiting(waiting)
 end
 refreshXp()
 player.AttributeChanged:Connect(refreshXp)
 
 -- Ability slots.
-type Slot = { button: TextButton, cooldown: Frame, cooldownText: TextLabel, readyAttribute: string? }
+type Slot = {
+	button: TextButton,
+	caption: TextLabel,
+	setCooldown: (number, string) -> (), -- share left (0..1), seconds text
+	readyAttribute: string?,
+	unlockAttribute: string?, -- Player attribute that unlocks it (nil = always on)
+	label: string, -- caption once unlocked
+	key: string,
+}
 
 local slotRow = Instance.new("Frame")
 slotRow.Name = "Skills"
@@ -221,16 +325,13 @@ layout.Parent = slotRow
 
 local slots: { Slot } = {}
 
-local function addSlot(name: string, label: string, key: string, order: number, locked: boolean, readyAttribute: string?)
+local function addSlot(name: string, label: string, key: string, order: number, readyAttribute: string?, unlockAttribute: string?)
 	local button = Instance.new("TextButton")
 	button.Name = name
 	button.LayoutOrder = order
 	button.Size = UDim2.fromOffset(SLOT_SIZE, SLOT_SIZE)
 	button.BackgroundColor3 = UiTheme.Surface
-	button.BackgroundTransparency = if locked then 0.65 else UiTheme.SurfaceTransparency
-	button.AutoButtonColor = not locked
 	button.Text = ""
-	button.Active = not locked
 	button.Parent = slotRow
 	UiTheme.corner(button)
 
@@ -239,39 +340,53 @@ local function addSlot(name: string, label: string, key: string, order: number, 
 	keyText.Size = UDim2.fromOffset(SLOT_SIZE, 10)
 	keyText.Text = key
 
-	local caption = UiTheme.text(button, Size.Caption, Font.Heavy, if locked then Strength.Faint else Strength.Value)
+	local caption = UiTheme.text(button, 10, Font.Heavy)
 	caption.Position = UDim2.fromOffset(0, 6)
 	caption.Size = UDim2.fromScale(1, 1)
 	caption.TextXAlignment = Enum.TextXAlignment.Center
-	caption.Text = label
 
-	-- Cooldown: a darker cover that shrinks downward, with seconds left.
-	local cover = Instance.new("Frame")
-	cover.Name = "Cooldown"
-	cover.AnchorPoint = Vector2.new(0, 1)
-	cover.Position = UDim2.fromScale(0, 1)
-	cover.Size = UDim2.fromScale(1, 0)
-	cover.BackgroundColor3 = UiTheme.Surface
-	cover.BackgroundTransparency = 0.25
-	cover.BorderSizePixel = 0
-	cover.ZIndex = 2
-	cover.Parent = button
-	UiTheme.corner(cover)
-	local coverText = UiTheme.text(cover, Size.Body, Font.Heavy)
-	coverText.Size = UDim2.fromScale(1, 1)
-	coverText.TextXAlignment = Enum.TextXAlignment.Center
-	coverText.ZIndex = 3
+	-- Cooldown: a dark wedge that sweeps away like a clock, seconds in the centre.
+	local setCooldown = UiTheme.radialCover(button)
+	setCooldown(0, "")
 
-	table.insert(slots, { button = button, cooldown = cover, cooldownText = coverText, readyAttribute = readyAttribute })
+	table.insert(slots, {
+		button = button,
+		caption = caption,
+		setCooldown = setCooldown,
+		readyAttribute = readyAttribute,
+		unlockAttribute = unlockAttribute,
+		label = label,
+		key = key,
+	})
 end
 
-addSlot("Attack", "BOLT", "LMB", 1, false, "PulseReadyAt")
-addSlot("Skill1", "1", "", 2, true, nil)
-addSlot("Skill2", "2", "", 3, true, nil)
-addSlot("Ultimate", "3", "", 4, true, nil)
+addSlot("Attack", "BOLT", "LMB", 1, "PulseReadyAt", nil)
+addSlot("Skill1", "STRIKE", "1", 2, "StrikeReadyAt", "HasStrike")
+addSlot("Skill2", "DASH", "2", 3, "DashReadyAt", "HasDash")
+addSlot("Ultimate", "BALL", "3", 4, "BallReadyAt", "HasBall")
+
+-- Locked slots are dim and show only their key; unlocked ones show their name.
+local function refreshSlots()
+	for _, slot in slots do
+		local unlocked = slot.unlockAttribute == nil or player:GetAttribute(slot.unlockAttribute) == true
+		slot.button.BackgroundTransparency = if unlocked then UiTheme.SurfaceTransparency else 0.65
+		slot.button.AutoButtonColor = unlocked
+		slot.button.Active = unlocked
+		slot.caption.Text = if unlocked then slot.label else slot.key
+		slot.caption.TextTransparency = if unlocked then Strength.Value else Strength.Faint
+	end
+end
+refreshSlots()
+player.AttributeChanged:Connect(refreshSlots)
 
 -- Cooldown covers follow the server's "<Action>ReadyAt" attributes (server time).
-local cooldownLengths: { [string]: number } = { PulseReadyAt = Config.Hero.Pulse.Cooldown }
+local Skills = Config.Hero.Skills
+local cooldownLengths: { [string]: number } = {
+	PulseReadyAt = Config.Hero.Pulse.Cooldown,
+	StrikeReadyAt = Skills.Strike.Cooldown,
+	DashReadyAt = Skills.Dash.Cooldown,
+	BallReadyAt = Skills.Ball.Cooldown,
+}
 RunService.RenderStepped:Connect(function()
 	local character = player.Character
 	local time = Workspace:GetServerTimeNow()
@@ -281,11 +396,9 @@ RunService.RenderStepped:Connect(function()
 		local left = if type(readyAt) == "number" then readyAt - time else 0
 		local length = if attribute then cooldownLengths[attribute] else nil
 		if left > 0 and length then
-			slot.cooldown.Size = UDim2.fromScale(1, math.clamp(left / length, 0, 1))
-			slot.cooldownText.Text = if left >= 1 then tostring(math.ceil(left)) else string.format("%.1f", left)
+			slot.setCooldown(left / length, if left >= 1 then tostring(math.ceil(left)) else string.format("%.1f", left))
 		else
-			slot.cooldown.Size = UDim2.fromScale(1, 0)
-			slot.cooldownText.Text = ""
+			slot.setCooldown(0, "")
 		end
 	end
 end)

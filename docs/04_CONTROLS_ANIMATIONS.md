@@ -8,7 +8,7 @@ Working assumptions, to confirm with the owner as each task lands:
 - **Character Menu:** U opens/closes it (or click the gold level badge): stats on the left, upgrade cards on the right when a pick is waiting; click a card or press 1/2/3.
 - **Camera:** first person (Roblox `CameraMode = LockFirstPerson`, owner decision 2026-10-20): mouse turns the view, centre crosshair. Shift lock (Roblox's built-in third-person mouse lock) stays off; first person locks the mouse anyway.
 - **Fire:** left mouse button, hold to repeat at the weapon's rate. Shoots where the crosshair points (owner 2026-10-20); out of range = miss, no auto-walk. Aim assist: put the crosshair on or right next to an enemy in range and it gets a red outline and your shots go straight at it.
-- **Abilities:** keys 1, 2, 3 (ultimate) per hero; abilities **OPEN** (T18).
+- **Abilities (Zeus, owner 2026-10-21):** hold **1** to aim Lightning Strike (area shown on the ground), release to cast; **2** Storm Dash where you face; **3** Ball Lightning at the enemy under the crosshair. Each unlocks through a talent card. While the Character Menu is open, 1/2/3 pick cards instead.
 - **Build/repair:** interact with a build node during the build phase to open its menu (key and UI **OPEN**, T12).
 - **Hub:** UI for hero pick, loadout and queue (T17).
 

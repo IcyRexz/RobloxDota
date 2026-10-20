@@ -21,6 +21,6 @@ Open the place in Studio and connect the Rojo plugin (default port 34872). `buil
 The original starter-pack scaffold (bootstraps, Protocol, Smoke test) was never imported (owner decision 2026-10-12); files are written one at a time.
 
 ## Studio work outside source sync
-**Terrain (hills):** Rojo cannot sync terrain. To see the hills in edit view, open View > Command Bar while not playing and run `require(game.ServerScriptService.Server.Landscape).buildTerrain()`, then save the place. Re-run it after hill settings change. The server also builds the same terrain at every start, so a place without this step still plays correctly.
+**Terrain (hills):** Rojo cannot sync terrain. To see the hills in edit view, open View > Command Bar while not playing and run `require(game.ServerScriptService.Server.Landscape).buildTerrain()`, then save the place. Re-run it after hill settings change. Baking stamps the terrain with a `LandscapeKey` attribute; at start the server sees it and does not rebuild (Output: "baked terrain found"), which avoids a start-up stutter. A place without baked terrain still plays: the server builds it at start (Output: "terrain built at start").
 
 Server capacity (planned 5), R15, supported devices (PC first), Studio API access for DataStores (owner choice), ownership and audience are Studio/Dashboard settings not held in this file; record them in the release checklist. When the place ID is known, consider `servePlaceIds` to prevent syncing into an unrelated place.

@@ -14,6 +14,13 @@ export type MinionStats = {
 	aggroRange: number, -- notices and attacks enemies this close (studs)
 }
 
+-- A level-up talent card: a stat talent (multiplies a stat by `factor`) or an
+-- ability unlock (`key` is its keyboard key).
+export type TalentInfo = { kind: string, name: string, text: string, factor: number?, key: string? }
+local function talent(info: TalentInfo): TalentInfo
+	return table.freeze(info)
+end
+
 -- Our minions: +20% health and attack over the zombie baseline, then another
 -- +20% on top (owner 2026-10-20, after the size change), and a wide aggro range
 -- so they engage zombies they pass instead of walking by them.
@@ -98,13 +105,57 @@ local Config = table.freeze({
 			-- XP needed to go from level N to N+1 is entry N; the last entry
 			-- repeats for every later level (owner: 30 per level for now).
 			XpToLevel = table.freeze({ 30 }),
+			MaxLevel = 25, -- owner 2026-10-21: 25 levels, no masteries
 		}),
-		-- Upgrade cards offered on level-up: id -> multiplier, stacking
-		-- (two Attack picks = 1.5 x 1.5). Ids are what the client sends.
-		Upgrades = table.freeze({
-			Attack = 1.5, -- basic attack damage
-			MoveSpeed = 1.5, -- walk speed
-			Health = 1.5, -- max health (current health rises by the same amount)
+		-- Talents offered on level-up (owner 2026-10-21). Three card slots: the
+		-- first offer is FirstOffers (the three ability unlocks, slots 1, 2, 3).
+		-- Picking a slot replaces only that slot's card with a random talent not
+		-- already on offer; the other two stay. Stat talents can be taken again
+		-- (multipliers stack: two Damage picks = 1.5 x 1.5); ability unlocks once.
+		-- Names and texts are shown on the cards.
+		Talents = table.freeze({
+			Attack = talent({ kind = "Stat", name = "Damage", factor = 1.5, text = "Your attacks and abilities hit harder." }),
+			MoveSpeed = talent({ kind = "Stat", name = "Move Speed", factor = 1.5, text = "You move faster." }),
+			Health = talent({ kind = "Stat", name = "Health", factor = 1.5, text = "More max health, healed at once." }),
+			Strike = talent({ kind = "Skill", name = "Lightning Strike", key = "1", text = "Call lightning on an area: damage, a short stun, then a slow." }),
+			Dash = talent({ kind = "Skill", name = "Storm Dash", key = "2", text = "Dash where you face and knock back zombies where you land." }),
+			Ball = talent({ kind = "Skill", name = "Ball Lightning", key = "3", text = "Charge, then hurl a lightning ball at one enemy: heavy damage and a long stun." }),
+		}) :: { [string]: TalentInfo },
+		FirstOffers = table.freeze({ "Strike", "Dash", "Ball" }),
+		-- Zeus's abilities (owner 2026-10-21; placeholder numbers). Damage is
+		-- multiplied by the player's Damage talents, like the basic attack.
+		Skills = table.freeze({
+			-- 1: hold to show the area on the ground, release to call the bolt.
+			Strike = table.freeze({
+				Range = 40, -- studs from you (flat) to the centre of the area
+				Radius = 10, -- studs: the area shown on the ground
+				Delay = 0.35, -- seconds from cast until the bolt lands
+				Damage = 60,
+				StunTime = 0.6, -- seconds hit zombies stand still...
+				SlowFactor = 0.5, -- ...then move at this share of their speed...
+				SlowTime = 3, -- ...for this long
+				Cooldown = 10,
+			}),
+			-- 2: dash where the camera faces (flat); zombies near the landing spot
+			-- are knocked back and briefly stunned.
+			Dash = table.freeze({
+				Speed = 80, -- studs per second while dashing
+				Duration = 0.22, -- seconds, so about 18 studs
+				PushRadius = 9,
+				PushSpeed = 45, -- studs per second the knocked-back zombie flies off at
+				PushStun = 0.5,
+				Cooldown = 6,
+			}),
+			-- 3: needs an enemy under the red marker (or assist) within Range;
+			-- charges, then the ball flies; damage and stun land on arrival.
+			Ball = table.freeze({
+				Range = 40,
+				ChargeTime = 1,
+				Speed = 70, -- studs per second in flight
+				Damage = 300,
+				StunTime = 2,
+				Cooldown = 30,
+			}),
 		}),
 	}),
 

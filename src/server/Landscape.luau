@@ -12,11 +12,16 @@
 -- re-run the script.
 --
 -- Rojo cannot sync terrain, so the terrain is built two ways:
---  * every server start (SwarmField calls build()), so any synced place works
 --  * once by hand in edit mode, so it shows (and saves) in your place. Studio
 --    View > Command Bar, while not playing:
 --      require(game.ServerScriptService.Server.Landscape).buildTerrain()
--- Both write the same ground, so running it again only refreshes it.
+--    This also stamps the terrain with BAKE_KEY (an attribute saved with the place).
+--  * at server start (SwarmField calls build()), ONLY if the place's terrain
+--    does not carry the current BAKE_KEY. Rewriting baked terrain made every
+--    client re-download and rebuild the whole ground at start, which showed as
+--    the landscape "growing in" with a stutter (owner report 2026-10-21).
+-- Change any height setting and BAKE_KEY changes with it, so stale baked
+-- terrain is rebuilt automatically (and should be baked again in Studio).
 
 local Workspace = game:GetService("Workspace")
 
@@ -146,6 +151,15 @@ end
 
 -- Writes the whole battlefield's terrain. Safe to call again (same result);
 -- works in edit mode from the Command Bar as well as in a running game.
+-- Names every setting that shapes the ground; terrain stamped with a different
+-- key was made by older settings.
+local BAKE_KEY = string.format(
+	"v1/%d/%g/%g/%g/%g/%g/%g/%g/%g/%g/%g/%g/%d/%d/%d/%d",
+	SEED, MAX_RISE, MAX_DEPTH, HEIGHT_SCALE, BROAD_SIZE, DETAIL_SIZE, DETAIL_SHARE,
+	FLAT_MARGIN_BASE, FLAT_MARGIN_ZOMBIES, BLEND, VOXEL, BOTTOM,
+	math.floor(minX), math.floor(maxX), math.floor(minZ), math.floor(maxZ)
+)
+
 function Landscape.buildTerrain()
 	local terrain = Workspace.Terrain
 	local x0 = math.floor(minX / VOXEL) * VOXEL
@@ -179,6 +193,7 @@ function Landscape.buildTerrain()
 		Vector3.new(x0 + nx * VOXEL, BOTTOM + ny * VOXEL, z0 + nz * VOXEL)
 	)
 	terrain:WriteVoxels(region, VOXEL, materials, occupancy)
+	terrain:SetAttribute("LandscapeKey", BAKE_KEY)
 	-- Animated grass blades over the whole map cost every player frame rate.
 	pcall(function()
 		(terrain :: any).Decoration = false
@@ -211,7 +226,16 @@ function Landscape.build()
 		return
 	end
 	built = true
-	Landscape.buildTerrain()
+	if Workspace.Terrain:GetAttribute("LandscapeKey") == BAKE_KEY then
+		print("[Landscape] baked terrain found in the place; not rebuilding it")
+	else
+		local started = os.clock()
+		Landscape.buildTerrain()
+		print(
+			`[Landscape] terrain built at start in {string.format("%.2f", os.clock() - started)} s `
+				.. "(bake it in Studio to skip this: see Landscape.luau)"
+		)
+	end
 	checkNatureHeights()
 end
 

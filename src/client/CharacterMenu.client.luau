@@ -7,10 +7,12 @@
 --    server's Stat* Player attributes), ABILITIES (the hero's skill slots) and
 --    TALENTS (talents taken, with a gold count). Hovering an ability or a talent
 --    shows its details.
---  * right (~62%): when a level-up pick is waiting, "Choose a talent" with three
---    cards (stat tag, name, description, before -> after with the new value in
---    gold); click one or press 1/2/3. Picking closes the menu. Otherwise a note
---    with the next pick's level.
+--  * right (~62%): when a level-up pick is waiting, "Choose a talent" with the
+--    three cards the server offers (Offer1-3 attributes: at first the three
+--    ability unlocks; a picked slot is refilled with a new random talent while
+--    the other two stay). Stat cards show before -> after with the new value in
+--    gold; ability cards show which key they unlock. Click one or press 1/2/3.
+--    Picking closes the menu. Otherwise a note with the next pick's level.
 -- The game keeps running while it is open (multiplayer): you can still walk,
 -- but the mouse is freed (a Modal button) so you can click, and you cannot shoot.
 -- Display only: the server (HeroProgress) checks and applies every pick.
@@ -51,28 +53,26 @@ local STATS: { StatInfo } = {
 	{ label = "Range", attribute = "StatAttackRange", tag = "RNG", unit = "" },
 }
 
--- Talent cards: id (Config.Hero.Upgrades), name, description, which stat it changes.
-type CardInfo = { id: string, name: string, effect: string, stat: StatInfo }
-local CARDS: { CardInfo } = {
-	{ id = "Attack", name = "Damage", effect = "Your attacks hit harder.", stat = STATS[2] },
-	{ id = "MoveSpeed", name = "Move Speed", effect = "You move faster.", stat = STATS[3] },
-	{ id = "Health", name = "Health", effect = "More max health, healed at once.", stat = STATS[1] },
-}
+-- Talents (Config.Hero.Talents) and, for stat talents, the stat each changes.
+local Talents = Config.Hero.Talents
+local SkillConfig = Config.Hero.Skills
+local STAT_OF: { [string]: StatInfo } = { Attack = STATS[2], MoveSpeed = STATS[3], Health = STATS[1] }
+local STAT_TALENT_ORDER = { "Attack", "MoveSpeed", "Health" }
 
--- The hero's ability slots, matching the HUD's slot row. Only the basic attack
--- exists so far; the other three are locked until talents can unlock abilities.
-type SkillInfo = { key: string, name: string, tag: string, locked: boolean }
+-- The hero's ability slots, matching the HUD's slot row: the basic attack, then
+-- the three abilities (locked until their talent is taken: Has<id> attributes).
+type SkillInfo = { key: string, id: string?, tag: string }
 local SKILLS: { SkillInfo } = {
-	{ key = "LMB", name = "Lightning Bolt", tag = "BOLT", locked = false },
-	{ key = "1", name = "Ability 1", tag = "1", locked = true },
-	{ key = "2", name = "Ability 2", tag = "2", locked = true },
-	{ key = "3", name = "Ultimate", tag = "3", locked = true },
+	{ key = "LMB", id = nil, tag = "BOLT" },
+	{ key = "1", id = "Strike", tag = "STRIKE" },
+	{ key = "2", id = "Dash", tag = "DASH" },
+	{ key = "3", id = "Ball", tag = "BALL" },
 }
+local SLOT_COUNT = 3
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local chooseEvent = ReplicatedStorage:WaitForChild("ChooseUpgrade") :: RemoteEvent
-local upgradeFactors = Config.Hero.Upgrades :: { [string]: number }
 
 -- Helpers ---------------------------------------------------------------------------
 
@@ -337,20 +337,71 @@ end
 local ABILITIES_TOP = ATTRIBUTES_TOP + space(5) + #STATS * ROW_HEIGHT + space(4)
 caption(left, "ABILITIES", ABILITIES_TOP)
 local abilityRow = slotRow(ABILITIES_TOP + space(5))
-for index, skill in SKILLS do
-	local box = slot(abilityRow, skill.tag, SLOT_SIZE, skill.locked)
-	box.Name = skill.name
-	box.LayoutOrder = index
-	addTooltip(box, function()
-		if skill.locked then
-			return `{skill.name}  [{skill.key}]`, "Locked. Talents will unlock abilities later."
-		end
-		return `{skill.name}  [{skill.key}]`,
+-- The player's Damage multiplier (talents scale ability damage too).
+local function damageMultiplier(): number
+	local damage = readNumber("StatAttackDamage")
+	return if damage then damage / Config.Hero.Pulse.Damage else 1
+end
+
+-- Tooltip text for each ability, with the current numbers.
+local function describeSkill(skill: SkillInfo): (string, string)
+	local id = skill.id
+	if not id then
+		return `Lightning Bolt  [{skill.key}]`,
 			"Fire a bolt where you aim. It hits the first enemy in line; out of range is a miss. "
 				.. "Aim assist locks on when the crosshair is right next to an enemy.\n\n"
 				.. `Damage <b>{statText("StatAttackDamage")}</b>   Range <b>{statText("StatAttackRange")}</b>\n`
 				.. `Cooldown <b>{formatNumber(Config.Hero.Pulse.Cooldown)}</b> s  ({statText("StatAttackSpeed")} per second)`
+	end
+	local talent = Talents[id]
+	local title = `{talent.name}  [{skill.key}]`
+	if player:GetAttribute("Has" .. id) ~= true then
+		return title, `Locked. Take the {talent.name} talent to unlock it.\n\n{talent.text}`
+	end
+	local mult = damageMultiplier()
+	if id == "Strike" then
+		local S = SkillConfig.Strike
+		return title,
+			`{talent.text} Hold {skill.key} to see the area, release to cast.\n\n`
+				.. `Damage <b>{formatNumber(S.Damage * mult)}</b>   Radius <b>{S.Radius}</b>   Range <b>{S.Range}</b>\n`
+				.. `Stun <b>{formatNumber(S.StunTime)}</b> s, then slowed to <b>{math.round(S.SlowFactor * 100)}%</b> for <b>{formatNumber(S.SlowTime)}</b> s\n`
+				.. `Cooldown <b>{S.Cooldown}</b> s`
+	elseif id == "Dash" then
+		local D = SkillConfig.Dash
+		return title,
+			`{talent.text} Press {skill.key}.\n\n`
+				.. `Distance about <b>{math.round(D.Speed * D.Duration)}</b>   Knockback radius <b>{D.PushRadius}</b>\n`
+				.. `Cooldown <b>{D.Cooldown}</b> s`
+	end
+	local B = SkillConfig.Ball
+	return title,
+		`{talent.text} Press {skill.key} with an enemy under the crosshair.\n\n`
+			.. `Damage <b>{formatNumber(B.Damage * mult)}</b>   Stun <b>{formatNumber(B.StunTime)}</b> s   Range <b>{B.Range}</b>\n`
+			.. `Charge <b>{formatNumber(B.ChargeTime)}</b> s   Cooldown <b>{B.Cooldown}</b> s`
+end
+
+type AbilityView = { box: Frame, label: TextLabel, skill: SkillInfo }
+local abilityViews: { AbilityView } = {}
+for index, skill in SKILLS do
+	local box = slot(abilityRow, skill.tag, SLOT_SIZE, skill.id ~= nil)
+	box.Name = skill.tag
+	box.LayoutOrder = index
+	local label = box:FindFirstChildOfClass("TextLabel") :: TextLabel
+	table.insert(abilityViews, { box = box, label = label, skill = skill })
+	addTooltip(box, function()
+		return describeSkill(skill)
 	end)
+end
+
+-- Unlocked abilities look like the basic attack; locked ones are dim with their key.
+local function refreshAbilities()
+	for _, view in abilityViews do
+		local id = view.skill.id
+		local unlocked = id == nil or player:GetAttribute("Has" .. id) == true
+		view.box.BackgroundTransparency = if unlocked then UiTheme.RaisedHoverTransparency else UiTheme.DisabledTransparency
+		view.label.Text = if unlocked then view.skill.tag else view.skill.key
+		view.label.TextTransparency = if unlocked then Strength.Value else Strength.Faint
+	end
 end
 
 local TALENTS_TOP = ABILITIES_TOP + space(5) + SLOT_SIZE + space(4)
@@ -364,7 +415,8 @@ noTalents.Text = "None yet"
 -- One slot per talent, shown once taken, with a gold count chip.
 type TalentView = { box: Frame, count: TextLabel }
 local talentViews: { [string]: TalentView } = {}
-for index, card in CARDS do
+for index, id in STAT_TALENT_ORDER do
+	local card = { id = id, name = Talents[id].name, effect = Talents[id].text, stat = STAT_OF[id] }
 	local box = slot(talentRow, card.stat.tag, SLOT_SIZE)
 	box.Name = card.id
 	box.LayoutOrder = index
@@ -386,7 +438,7 @@ for index, card in CARDS do
 	talentViews[card.id] = { box = box, count = count }
 	addTooltip(box, function()
 		local taken = math.floor(readNumber(card.id .. "Picks") or 0)
-		local factor = upgradeFactors[card.id] or 1
+		local factor = Talents[card.id].factor or 1
 		return `{card.name}  x{taken}`,
 			`{card.effect}\nEach pick: x{formatNumber(factor)} {string.lower(card.stat.label)}.\n\n`
 				.. `Total <b>x{formatNumber(factor ^ taken)}</b>   Now <b>{statText(card.stat.attribute)}{card.stat.unit}</b>`
@@ -428,21 +480,22 @@ cardLayout.Parent = cardRow
 
 local setOpen: (boolean) -> () -- defined below
 
--- Sends the pick and closes the menu (owner 2026-10-20); the ring's gold "U"
--- pill stays if more picks are waiting, so the player can reopen it.
-local function choose(id: string)
+-- Sends the pick (a card slot, 1-3) and closes the menu (owner 2026-10-20);
+-- the ring stays gold if more picks are waiting, so the player can reopen it.
+local function choose(slotIndex: number)
 	if pending() > 0 then
-		chooseEvent:FireServer(id)
+		chooseEvent:FireServer(slotIndex)
 	end
 	setOpen(false)
 end
 
-type CardView = { info: CardInfo, preview: TextLabel }
+-- Three card slots; their content comes from the server's Offer1-3 (refresh).
+type CardView = { tag: TextLabel, name: TextLabel, effect: TextLabel, preview: TextLabel }
 local cardViews: { CardView } = {}
 
-for index, info in CARDS do
+for index = 1, SLOT_COUNT do
 	local card = Instance.new("TextButton")
-	card.Name = info.id
+	card.Name = `Card{index}`
 	card.LayoutOrder = index
 	card.Size = UDim2.new(1 / 3, -space(2), 1, 0)
 	card.BackgroundColor3 = UiTheme.Raised
@@ -461,7 +514,6 @@ for index, info in CARDS do
 
 	local tag = UiTheme.text(card, Size.Small, Font.Heavy, Strength.Label)
 	tag.Size = UDim2.new(1, -20, 0, 16)
-	tag.Text = info.stat.tag
 	local key = UiTheme.text(card, Size.Caption, Font.Bold, Strength.Faint)
 	key.AnchorPoint = Vector2.new(1, 0)
 	key.Position = UDim2.fromScale(1, 0)
@@ -472,15 +524,13 @@ for index, info in CARDS do
 	local name = UiTheme.text(card, Size.Value + 2, Font.Heavy)
 	name.Position = UDim2.fromOffset(0, space(7))
 	name.Size = UDim2.new(1, 0, 0, 22)
-	name.Text = info.name
 
 	local effect = UiTheme.text(card, Size.Body - 1, Font.Regular, Strength.Label)
 	effect.Position = UDim2.fromOffset(0, space(13))
-	effect.Size = UDim2.new(1, 0, 0, 56)
+	effect.Size = UDim2.new(1, 0, 0, 72)
 	effect.TextWrapped = true
 	effect.TextTruncate = Enum.TextTruncate.None
 	effect.TextYAlignment = Enum.TextYAlignment.Top
-	effect.Text = `{info.effect} x{formatNumber(upgradeFactors[info.id] or 1)}.`
 
 	local preview = UiTheme.text(card, Size.Value, Font.Bold)
 	preview.AnchorPoint = Vector2.new(0, 1)
@@ -501,9 +551,9 @@ for index, info in CARDS do
 		tag.TextTransparency = Strength.Label
 	end)
 	card.Activated:Connect(function()
-		choose(info.id)
+		choose(index)
 	end)
-	table.insert(cardViews, { info = info, preview = preview })
+	table.insert(cardViews, { tag = tag, name = name, effect = effect, preview = preview })
 end
 
 -- No-pick note (shown when nothing is waiting).
@@ -555,18 +605,38 @@ local function refresh()
 	if picks > 0 then
 		rightTitle.Text = "Choose a talent"
 		rightSub.Text = if picks > 1 then `Level up  ·  {picks} picks left` else "Level up"
-		for _, view in cardViews do
-			local current = readNumber(view.info.stat.attribute)
-			local factor = upgradeFactors[view.info.id] or 1
-			view.preview.Text = if current
-				then `{formatNumber(current)}  <font transparency="0.6">-&gt;</font>  <font color="#{GOLD_HEX}">{formatNumber(current * factor)}</font>`
-				else ""
+		for index, view in cardViews do
+			local id = player:GetAttribute(`Offer{index}`)
+			local talent = if type(id) == "string" then Talents[id] else nil
+			if talent and talent.kind == "Skill" then
+				view.tag.Text = "NEW ABILITY"
+				view.name.Text = talent.name
+				view.effect.Text = talent.text
+				view.preview.Text = `<font color="#{GOLD_HEX}">Unlocks key {talent.key or "?"}</font>`
+			elseif talent and type(id) == "string" then
+				local stat = STAT_OF[id]
+				local factor = talent.factor or 1
+				local current = if stat then readNumber(stat.attribute) else nil
+				view.tag.Text = if stat then stat.tag else "TALENT"
+				view.name.Text = talent.name
+				view.effect.Text = `{talent.text} x{formatNumber(factor)}.`
+				view.preview.Text = if current
+					then `{formatNumber(current)}  <font transparency="0.6">-&gt;</font>  <font color="#{GOLD_HEX}">{formatNumber(current * factor)}</font>`
+					else ""
+			else
+				view.tag.Text = ""
+				view.name.Text = "..."
+				view.effect.Text = ""
+				view.preview.Text = ""
+			end
 		end
 	else
 		rightTitle.Text = "Talents"
 		rightSub.Text = "Level up to earn a pick"
 		noteNext.Text = if toNext > 0 then `Next pick at level {level + 1}  ({toNext - xp} XP to go)` else ""
 	end
+
+	refreshAbilities()
 
 	local anyTaken = false
 	for id, view in talentViews do
@@ -626,7 +696,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			elseif input.KeyCode == Enum.KeyCode.Three then 3
 			else nil
 		if index then
-			choose(CARDS[index].id)
+			choose(index)
 		end
 	end
 end)
