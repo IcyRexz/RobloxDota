@@ -1,7 +1,8 @@
 --!strict
 -- Minion visuals drawn on each player's own screen:
---  * a small health bar above every minion (green ally / red enemy, no name),
---    shown within Config.Display.HealthBarRange of your hero
+--  * a thin health bar above every minion (green ally / red enemy, no name,
+--    UI design system: docs/11_UI_DESIGN.md), shown within
+--    Config.Display.HealthBarRange of your hero
 --  * the archer's bow-draw pose and the flying arrow
 --  * the zombie's hand swipe (arm rears up, claws down, body lunges in)
 -- Display only. The server owns minion health and decides every hit; the arrow
@@ -14,12 +15,10 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local JointPose = require(ReplicatedStorage.Shared.JointPose)
+local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local VISIBILITY_CHECK_SECONDS = 0.2
-local ALLY_COLOR = Color3.fromRGB(70, 200, 90)
-local ENEMY_COLOR = Color3.fromRGB(220, 60, 60)
-local BAR_BACK_COLOR = Color3.fromRGB(25, 25, 30)
-local BAR_SIZE = UDim2.fromOffset(40, 5) -- on-screen pixels
+local BAR_SIZE = UDim2.fromOffset(36, UiTheme.Bar.Unit) -- on-screen pixels
 -- Players are always on our side; used until the server sets the attribute.
 local DEFAULT_TEAM = Config.Teams.Defenders
 
@@ -66,7 +65,7 @@ local function refresh(bar: Bar)
 	local current = if type(health) == "number" then math.clamp(health, 0, max) else max
 	bar.fill.Size = UDim2.fromScale(current / max, 1)
 	local isAlly = bar.model:GetAttribute("Team") == localTeam()
-	bar.fill.BackgroundColor3 = if isAlly then ALLY_COLOR else ENEMY_COLOR
+	bar.fill.BackgroundColor3 = if isAlly then UiTheme.Ally else UiTheme.Enemy
 end
 
 local function addBar(model: Model)
@@ -83,20 +82,10 @@ local function addBar(model: Model)
 	billboard.StudsOffset = Vector3.new(0, 1.6, 0)
 	billboard.LightInfluence = 0
 
-	local back = Instance.new("Frame")
-	back.BorderSizePixel = 0
-	back.BackgroundColor3 = BAR_BACK_COLOR
-	back.Size = UDim2.fromScale(1, 1)
-	back.Parent = billboard
-	local outline = Instance.new("UIStroke")
-	outline.Color = Color3.new(0, 0, 0)
-	outline.Parent = back
+	local parts = UiTheme.bar(billboard, UiTheme.Bar.Unit, UiTheme.Ally)
+	parts.track.Size = UDim2.fromScale(1, 1)
 
-	local fill = Instance.new("Frame")
-	fill.BorderSizePixel = 0
-	fill.Parent = back
-
-	local bar: Bar = { model = model, billboard = billboard, fill = fill }
+	local bar: Bar = { model = model, billboard = billboard, fill = parts.fill }
 	bars[model] = bar
 	refresh(bar)
 	-- These connections end when the minion is destroyed.
@@ -116,11 +105,6 @@ minionFolder.ChildAdded:Connect(function(child)
 		addBar(child)
 	end
 end)
-minionFolder.ChildRemoved:Connect(function(child)
-	if child:IsA("Model") then
-		bars[child] = nil
-	end
-end)
 
 -- Recolor every bar if this player's team changes (e.g. when a match assigns teams).
 player:GetAttributeChangedSignal("Team"):Connect(function()
@@ -129,8 +113,7 @@ player:GetAttributeChangedSignal("Team"):Connect(function()
 	end
 end)
 
--- Show bars only near your hero (measured from the hero, not the camera, so
--- the high MOBA camera does not hide bars of units you can target).
+-- Show bars only near your hero (flat distance from the hero).
 local function heroPosition(): Vector3?
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -158,12 +141,6 @@ end)
 type PosedJoint = { joint: JointPose.Joint, tweens: { Tween } }
 local posedJoints: { [Model]: { [string]: PosedJoint } } = {}
 local warnedMissing = false
-
-minionFolder.ChildRemoved:Connect(function(child)
-	if child:IsA("Model") then
-		posedJoints[child] = nil
-	end
-end)
 
 -- Finds a joint and remembers its resting pose the first time it is used.
 local function joint(model: Model, name: string): PosedJoint?
@@ -291,12 +268,16 @@ end)
 -- Zombie swipes --------------------------------------------------------------
 
 local swipeCounts: { [Model]: number } = {}
+local loggedFirstSwipe = false
+
+-- A removed minion's bar, poses and swipe count are forgotten (one cleanup for all).
 minionFolder.ChildRemoved:Connect(function(child)
 	if child:IsA("Model") then
+		bars[child] = nil
+		posedJoints[child] = nil
 		swipeCounts[child] = nil
 	end
 end)
-local loggedFirstSwipe = false
 
 local function playSwipe(zombie: Model, hitDelay: number)
 	-- Arms take turns.

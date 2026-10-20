@@ -59,7 +59,9 @@ end
 -- Things attacks pass through (owner decisions 2026-10-20): hills (Terrain) and
 -- fences. Fence collision parts block walking, and Roblox always lets raycasts
 -- hit a part that collides (CanQuery only works with CanCollide off), so they
--- are excluded here by their Kind attribute. The fence list is read once from the map.
+-- are excluded here by their Kind attribute. The fence list is read from the
+-- map once the game has fully loaded (on a client, parts may still be arriving
+-- before that, so it is not kept until then).
 local fences: { Instance }? = nil
 function Targeting.seeThrough(): { Instance }
 	local list: { Instance } = { Workspace.Terrain }
@@ -72,7 +74,13 @@ function Targeting.seeThrough(): { Instance }
 					table.insert(found, item)
 				end
 			end
-			fences = found
+			if game:IsLoaded() then
+				fences = found
+			end
+			for _, fence in found do
+				table.insert(list, fence)
+			end
+			return list
 		end
 	end
 	if fences then
@@ -103,8 +111,97 @@ function Targeting.hasLineOfSight(target: Instance, from: Vector3, to: Vector3):
 	return Workspace:Raycast(from, to - from, params) == nil
 end
 
+-- Every structure in the map, read once the game has fully loaded (the arena
+-- also holds hundreds of trees, rocks and fence parts, so it is not re-scanned
+-- on every call). Destroyed structures are removed from the map and dropped here.
+local structureCache: { Instance }? = nil
+local function standingStructures(): { Instance }
+	if not structureCache then
+		local arena = Workspace:FindFirstChild("Arena")
+		if not arena then
+			return {}
+		end
+		local found: { Instance } = {}
+		for _, item in arena:GetDescendants() do
+			if item:IsA("BasePart") and Targeting.StructureKinds[item:GetAttribute("Kind")] then
+				table.insert(found, item)
+			end
+		end
+		if not game:IsLoaded() then
+			return found -- parts may still be arriving: do not keep this list yet
+		end
+		structureCache = found
+	end
+	local cache = structureCache :: { Instance }
+	for i = #cache, 1, -1 do
+		if not cache[i].Parent then
+			table.remove(cache, i)
+		end
+	end
+	return cache
+end
+
+-- The basic attack's shot, shared so the client can predict exactly what a
+-- click will hit (the red marker shows whenever it would) and the server
+-- decides with the same rule. A sphere of ShotRadius is swept from the hero's
+-- head along `direction` for `range` studs: the first enemy hit (isEnemy says
+-- which) is the target; allies are passed through; hills and fences are seen
+-- through (seeThrough); anything else (trees, rocks, structures that are not
+-- valid targets) stops the shot. Returns the enemy hit (or nil) and where the
+-- shot ended.
+Targeting.ShotRadius = 1 -- studs; a thin sphere instead of a line, so near misses still hit
+local MAX_PASS_THROUGH = 6 -- allies the shot may pass through before giving up
+
+-- The target kind (unit model or structure part) a hit part belongs to.
+function Targeting.ownerOf(part: Instance): Instance?
+	local instance: Instance? = part
+	while instance and instance ~= Workspace do
+		if Targeting.TargetKinds[instance:GetAttribute("Kind")] then
+			return instance
+		end
+		instance = instance.Parent
+	end
+	return nil
+end
+
+function Targeting.castShot(
+	character: Model,
+	team: string,
+	direction: Vector3,
+	range: number,
+	isEnemy: (Instance) -> boolean
+): (Instance?, Vector3)
+	local head = character:FindFirstChild("Head")
+	local from = if head and head:IsA("BasePart") then head else Targeting.rootOf(character)
+	if not from then
+		return nil, Vector3.zero
+	end
+	local origin = from.Position
+	local ignore = Targeting.seeThrough()
+	table.insert(ignore, character)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	for _ = 1, MAX_PASS_THROUGH do
+		params.FilterDescendantsInstances = ignore
+		local result = Workspace:Spherecast(origin, Targeting.ShotRadius, direction * range, params)
+		if not result then
+			return nil, origin + direction * range
+		end
+		local owner = Targeting.ownerOf(result.Instance)
+		if owner and isEnemy(owner) then
+			return owner, result.Position
+		end
+		if owner and owner:GetAttribute("Team") == team then
+			table.insert(ignore, owner) -- an ally: the shot passes through
+		else
+			return nil, result.Position -- a tree, rock, structure or locked target
+		end
+	end
+	return nil, origin + direction * range
+end
+
 -- Every enemy unit worth considering, in priority order: heroes, then minions,
--- then structures. Callers check range, health and locks themselves.
+-- then structures. Callers check team, range, health and locks themselves.
 function Targeting.candidateGroups(): { { Instance } }
 	local heroes: { Instance } = {}
 	for _, player in Players:GetPlayers() do
@@ -115,16 +212,7 @@ function Targeting.candidateGroups(): { { Instance } }
 	end
 	local minionFolder = Workspace:FindFirstChild("Minions")
 	local minions: { Instance } = if minionFolder then minionFolder:GetChildren() else {}
-	local structures: { Instance } = {}
-	local arena = Workspace:FindFirstChild("Arena")
-	if arena then
-		for _, item in arena:GetDescendants() do
-			if item:IsA("BasePart") and Targeting.StructureKinds[item:GetAttribute("Kind")] then
-				table.insert(structures, item)
-			end
-		end
-	end
-	return { heroes, minions, structures }
+	return { heroes, minions, table.clone(standingStructures()) }
 end
 
 return table.freeze(Targeting)

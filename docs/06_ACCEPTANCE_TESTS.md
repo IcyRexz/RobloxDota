@@ -11,14 +11,14 @@ Players spawn inside the compound, reach every build node and cannot leave the m
 ## A03 — Hub and mission flow (P0)
 Solo and party (2 and 5 players) can start from the hub. Leaving during Briefing cancels it. Leaving mid-mission keeps the others playing; last player leaving resets. Results return everyone to the hub. Three missions in a row start clean (no leftover Gold, pieces, enemies or cooldowns).
 
-## A04 — Weapons and classes (P0)
-Each class's weapon and abilities work while moving. Holding fire never exceeds the weapon's rate; no doubled or stuck shots; focus loss and death stop held fire.
+## A04 — Heroes and attacks (P0)
+Each hero's attack and abilities work while moving. Holding attack never exceeds the attack rate; no doubled or stuck shots; focus loss and death stop held fire.
 
 ## A05 — Death and respawn (P0)
 Dead players cannot fire, build or repair. Respawn/revive follows the GDD; repeated deaths restore controls exactly once.
 
 ## A06 — Waves, structures and results (P0)
-Waves spawn as configured and attack players, built pieces and the core. Walls block, turrets fire, traps trigger, destroyed pieces free their node. Core destruction loses; clearing the final wave (boss when present) wins. Damage arriving after the result cannot change it.
+Waves spawn as configured and attack players, built pieces and the core. Walls block, towers fire, traps trigger, destroyed pieces free their node. Core destruction loses; clearing the final wave (boss when present) wins. Damage arriving after the result cannot change it.
 
 ## A07 — Remote and combat authority (P0)
 With a Studio-only test client, send wrong types, extra keys, NaN/infinite/huge numbers, unknown actions, stale epoch, and 100 requests/s for 10 s. Fire while dead, outside a mission, on cooldown, at targets out of range/behind walls. Expected: no exception, no unauthorized damage, no unbounded replies or logs.
@@ -27,7 +27,7 @@ With a Studio-only test client, send wrong types, extra keys, NaN/infinite/huge 
 Building outside the build phase, at a taken or unknown node, from far away, without enough Gold, or with a forged piece ID is rejected. Gold changes only on confirmed kills and purchases. Repair cannot overheal or go below cost.
 
 ## A09 — Persistence (P0)
-Credits, class levels/XP, owned items and loadouts survive leave/rejoin and server shutdown. Simulated DataStore failure does not wipe or duplicate progress. Joining a second server while the first is still saving does not roll back. Locked maps and unowned items cannot be used.
+Credits, hero levels/XP, owned items and loadouts survive leave/rejoin and server shutdown. Simulated DataStore failure does not wipe or duplicate progress. Joining a second server while the first is still saving does not roll back. Locked maps and unowned items cannot be used.
 
 ## A10 — Capacity and cleanup (P0)
 At the enemy cap with five players and full builds: no backlog, no unbounded tasks. After three missions, enemy/projectile counts return to zero and connection counts to baseline.

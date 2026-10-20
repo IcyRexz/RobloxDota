@@ -59,10 +59,16 @@ local Config = table.freeze({
 	}),
 
 	-- What players can see. Health bars show for units within HealthBarRange of
-	-- your hero; it must stay larger than Hero.Pulse.AcquireRange so you can
-	-- always see the health of anything you can target.
+	-- your hero; it must stay larger than Hero.Pulse.Range so you can always
+	-- see the health of anything you can hit.
 	Display = table.freeze({
 		HealthBarRange = 60,
+	}),
+
+	-- Gold (T11, owner 2026-10-20): earned by landing the killing hit on a
+	-- zombie with your hero. Nothing to spend it on yet.
+	Gold = table.freeze({
+		PerLastHit = 1, -- placeholder amount
 	}),
 
 	-- The one hero both players use (owner decision 2026-10-15: Zeus).
@@ -76,13 +82,29 @@ local Config = table.freeze({
 		-- Basic attack (GDD "Pulse"): auto-targets the nearest enemy hero, else
 		-- minion, else unlocked structure, in range and line of sight.
 		Pulse = table.freeze({
-			Range = 24, -- studs (to a unit's centre, or a structure's side)
-			-- Targets this close are marked and chased into Range when attack is
-			-- pressed (client-side movement; the server still checks Range).
-			AcquireRange = 40,
+			-- Shot length in studs from the hero's head along the aim. The lock-on
+			-- marker also only shows targets this close (planar distance).
+			Range = 24,
 			Damage = 40,
 			Cooldown = 0.75, -- seconds from the start of one attack to the next
 			Windup = 0.15, -- seconds between starting the swing and the hit
+		}),
+		-- In-match levels, rogue-like (owner 2026-10-20, placeholder numbers):
+		-- every zombie that dies, by anyone's hand, gives every player XP; each
+		-- level-up gives one upgrade pick from the cards below. Kept for the
+		-- session (death does not reset it).
+		Leveling = table.freeze({
+			XpPerZombieDeath = 1,
+			-- XP needed to go from level N to N+1 is entry N; the last entry
+			-- repeats for every later level (owner: 30 per level for now).
+			XpToLevel = table.freeze({ 30 }),
+		}),
+		-- Upgrade cards offered on level-up: id -> multiplier, stacking
+		-- (two Attack picks = 1.5 x 1.5). Ids are what the client sends.
+		Upgrades = table.freeze({
+			Attack = 1.5, -- basic attack damage
+			MoveSpeed = 1.5, -- walk speed
+			Health = 1.5, -- max health (current health rises by the same amount)
 		}),
 	}),
 
@@ -100,19 +122,13 @@ local Config = table.freeze({
 		WaveInterval = 25,
 		MaxAlive = 100, -- across both teams (horde size; check frame rate in Studio)
 		Lifetime = 180, -- despawn after this many seconds (long enough to push to the core)
-		-- A unit target is dropped once it is this far beyond the minion's aggro range.
-		TargetSlack = 2,
-		-- Leash: give up a chase this far from where the minion left its path,
-		-- or after chasing this long without reaching attack range.
-		LeashDistance = 12,
-		-- A unit hit by an enemy (unit, hero or tower) fights back, even if it was
-		-- hitting a structure, while the attacker stays within this many studs.
+		-- Our minions: a unit hit by an enemy unit or tower fights back, even if it
+		-- was hitting a structure, while the attacker stays within this many studs.
 		-- Larger than tower range (28) so towers shooting a unit get attacked back.
+		-- (Zombies never retaliate; they go for whatever is nearest.)
 		RetaliateRange = 32,
-		-- Allies this close to a unit that gets hit join in on the attacker.
+		-- Our minions: allies this close to a unit that gets hit join in on the attacker.
 		HelpRange = 10,
-		LeashChaseTime = 3,
-		LeashReturnedDistance = 2, -- back on the path once this close to the anchor
 		-- TEMPORARY, for simulation only: extra health and damage per team, so one
 		-- side wins the push. Remove before release.
 		TestTeamBonus = table.freeze({}) :: { [string]: number }, -- e.g. { Defenders = 0.2 }
@@ -127,22 +143,16 @@ local Config = table.freeze({
 		Scale = 1, -- body size relative to a normal character (owner 2026-10-20: same height as players)
 	}),
 
-	-- Used by the structure code (T09). Map attributes must match until then.
+	-- Towers. Structure health lives on the map parts (Health / MaxHealth
+	-- attributes in src/map/*.model.json).
 	Structure = table.freeze({
 		-- TEMPORARY, for testing only: starting health for named structures
 		-- (max health is unchanged). Remove before release.
-		TestStartHealth = table.freeze({}) :: { [string]: number }, -- e.g. { RedTower = 10 }
-		TowerHealth = 900,
-		BarracksHealth = 700,
-		CoreHealth = 1200,
+		TestStartHealth = table.freeze({}) :: { [string]: number }, -- e.g. { LeftTower = 10 }
 		TowerRange = 28,
 		TowerAttackInterval = 1,
-		TowerDamage = 60, -- every hit on a minion
+		TowerDamage = 60, -- every hit on a unit
 		TowerShotSpeed = 80, -- studs per second; damage lands when the shot arrives
-		TowerHeroRamp = table.freeze({ 60, 90, 120 }), -- hits in a row on one hero; last value repeats
-		TowerRampReset = 2, -- seconds without a hit on that hero
-		BackdoorReduction = 0.5, -- hero damage taken without an enemy minion escort
-		BackdoorEscortRange = 28,
 	}),
 })
 

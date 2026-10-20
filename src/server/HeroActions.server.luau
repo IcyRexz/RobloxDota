@@ -1,14 +1,17 @@
 --!strict
 -- Hero actions requested by clients. So far: the basic attack (GDD "Pulse").
--- The client only says "I want to attack"; the server decides everything else:
--- whether the hero may act, the target (nearest enemy hero, else minion, else
--- unlocked structure, in range and line of sight), the cooldown and the damage.
+-- Aimed shot (owner 2026-10-20): the client sends only the direction it is
+-- aiming (the camera's look direction = the crosshair). The server casts the
+-- shot itself from the hero's head along that direction, up to Pulse.Range:
+-- the first enemy on that line is hit; allies, hills and fences are passed
+-- through; trees, rocks and structures stop it; nothing in range = a miss.
+-- Every accepted shot spends the cooldown, hit or miss.
 --
--- Remote: HeroAction (client -> server): (action name: string, target hint: Instance?).
---   The hint is the target the player's marker is on. The server uses it only
---   if it passes every check below; otherwise it picks its own target.
--- Remote: HeroAttack (server -> client): (attacker, target, damage dealt) when a
---   hit lands, so clients can draw the lightning and damage numbers. Display only.
+-- Remote: HeroAction (client -> server): (action name: string, aim direction: Vector3).
+--   The direction must be finite and roughly unit length; it is normalised.
+-- Remote: HeroAttack (server -> client): (attacker, target or nil, damage dealt,
+--   end point) for every shot, so clients can draw the bolt (to the end point)
+--   and, on a hit, the flash and damage number. Display only.
 -- The swing animation and turning to face the target are done by the
 -- attacker's own device (it owns its character's movement); setting the
 -- character's CFrame here would snap it back to an out-of-date position.
@@ -18,6 +21,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local CombatService = require(script.Parent.CombatService)
+local HeroProgress = require(script.Parent.HeroProgress)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
 
@@ -56,54 +60,45 @@ local function allowRequest(state: State, time: number): boolean
 	return true
 end
 
--- Can this hero hit this target right now: enemy, alive, not locked, in range,
--- in line of sight? Returns the aim point when it can.
-local function canHit(character: Model, team: string, target: Instance): Vector3?
+-- Can this hero damage this instance: an enemy target kind, alive, not locked?
+local function isEnemyTarget(character: Model, team: string, target: Instance): boolean
 	if not Targeting.TargetKinds[target:GetAttribute("Kind")] or target == character then
-		return nil
+		return false
 	end
-	if target:GetAttribute("Team") == team or not CombatService.isAlive(target) then
-		return nil
-	end
-	if typeof(target:GetAttribute("Team")) ~= "string" or CombatService.isLocked(target) then
-		return nil
-	end
-	local root = Targeting.rootOf(character)
-	local point = if root then Targeting.aimPointOf(target, root.Position) else nil
-	if not (root and point) or Targeting.planarDistance(point, root.Position) > Pulse.Range then
-		return nil
-	end
-	return if Targeting.hasLineOfSight(target, root.Position, point) then point else nil
+	local targetTeam = target:GetAttribute("Team")
+	return typeof(targetTeam) == "string"
+		and targetTeam ~= team
+		and CombatService.isAlive(target)
+		and not CombatService.isLocked(target)
 end
 
--- The nearest hittable target, taking heroes first, then minions, then
--- structures (ties: lowest name, so every run picks the same).
-local function chooseTarget(character: Model, team: string): Instance?
-	local root = Targeting.rootOf(character) :: BasePart
-	for _, group in Targeting.candidateGroups() do
-		local best: Instance? = nil
-		local bestDistance = math.huge
-		for _, target in group do
-			local point = canHit(character, team, target)
-			if point then
-				local distance = Targeting.planarDistance(point, root.Position)
-				if distance < bestDistance or (distance == bestDistance and best and target.Name < best.Name) then
-					best, bestDistance = target, distance
-				end
-			end
-		end
-		if best then
-			return best
-		end
-	end
-	return nil
+-- Casts the shot from the hero's head (shared rule in Targeting.castShot, the
+-- same one the client uses to show its red marker). Returns the enemy hit (or
+-- nil) and where the shot ended.
+local function castShot(character: Model, team: string, direction: Vector3): (Instance?, Vector3)
+	return Targeting.castShot(character, team, direction, Pulse.Range, function(target)
+		return isEnemyTarget(character, team, target)
+	end)
 end
 
-local function pulse(player: Player, state: State, time: number, hint: unknown)
+-- A usable aim direction from the client: a finite, roughly unit Vector3.
+local function readDirection(value: unknown): Vector3?
+	if typeof(value) ~= "Vector3" then
+		return nil
+	end
+	local length = value.Magnitude
+	if length ~= length or length < 0.5 or length > 1.5 then
+		return nil -- NaN, infinite or not a direction
+	end
+	return value / length
+end
+
+local function pulse(player: Player, state: State, time: number, aim: unknown)
+	local direction = readDirection(aim)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local team = character and character:GetAttribute("Team")
-	if not (character and humanoid and typeof(team) == "string") then
+	if not (direction and character and humanoid and typeof(team) == "string") then
 		return
 	end
 	if character:GetAttribute("Kind") ~= "Hero" or not CombatService.isAlive(character) then
@@ -113,31 +108,24 @@ local function pulse(player: Player, state: State, time: number, hint: unknown)
 	if time < state.busyUntil or (typeof(readyAt) == "number" and time < readyAt) then
 		return -- still swinging or cooling down; never queued for later
 	end
-	local target: Instance? = nil
-	if typeof(hint) == "Instance" and canHit(character, team, hint) then
-		target = hint
-	else
-		target = chooseTarget(character, team)
-	end
-	if not target then
-		return -- no target: no swing, no cooldown
-	end
 
 	-- Accepted: cooldown starts now (server time); clients read it for the HUD.
 	character:SetAttribute("PulseReadyAt", time + Pulse.Cooldown)
 	state.busyUntil = time + Pulse.Windup
 
 	task.delay(Pulse.Windup, function()
-		-- The hero must still be this same living character, and the target must
-		-- still be hittable (range and line of sight are checked again).
+		-- The hero must still be this same living character; the shot is cast
+		-- now, from where the hero stands at the end of the windup.
 		if player.Character ~= character or not CombatService.isAlive(character) then
 			return
 		end
-		if not canHit(character, team, target) then
-			return -- missed: the cooldown stays spent
+		local target, endPoint = castShot(character, team, direction)
+		local dealt = 0
+		if target then
+			-- Damage includes the player's Attack level-up picks.
+			dealt = CombatService.applyDamage(target, HeroProgress.attackDamage(player), character, team)
 		end
-		local dealt = CombatService.applyDamage(target, Pulse.Damage, character, team)
-		attackEvent:FireAllClients(character, target, dealt)
+		attackEvent:FireAllClients(character, target, dealt, endPoint)
 	end)
 end
 
@@ -145,7 +133,7 @@ local ACTIONS: { [string]: (Player, State, number, unknown) -> () } = {
 	Pulse = pulse,
 }
 
-actionEvent.OnServerEvent:Connect(function(player: Player, action: unknown, hint: unknown)
+actionEvent.OnServerEvent:Connect(function(player: Player, action: unknown, argument: unknown)
 	local state = states[player]
 	if not state then
 		state = { requestTimes = {}, busyUntil = 0 }
@@ -160,7 +148,7 @@ actionEvent.OnServerEvent:Connect(function(player: Player, action: unknown, hint
 	end
 	local handler = ACTIONS[action]
 	if handler then
-		handler(player, state, time, hint)
+		handler(player, state, time, argument)
 	end
 end)
 

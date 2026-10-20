@@ -17,19 +17,21 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local MAP_SIZE = 200 -- on-screen pixels, longest side
-local MARGIN = 14 -- from the screen edges
+local MARGIN = UiTheme.space(4) -- from the screen edges
 local DOT_UPDATE_SECONDS = 0.1
-local ALLY_COLOR = Color3.fromRGB(70, 200, 90)
-local ENEMY_COLOR = Color3.fromRGB(220, 60, 60)
+-- Dots and squares use the UI meaning colours; the map itself (ground, floor,
+-- fences, trees, rocks) is a muted picture of the world.
+local ALLY_COLOR = UiTheme.Ally
+local ENEMY_COLOR = UiTheme.Enemy
 local GROUND_COLOR = Color3.fromRGB(52, 66, 44)
 local FLOOR_COLOR = Color3.fromRGB(84, 86, 92)
 local FENCE_COLOR = Color3.fromRGB(196, 150, 100)
 local TREE_COLOR = Color3.fromRGB(34, 110, 40)
 local ROCK_COLOR = Color3.fromRGB(140, 140, 146)
 local PROP_COLORS: { [string]: Color3 } = { Fence = FENCE_COLOR, Tree = TREE_COLOR, Rock = ROCK_COLOR }
-local FRAME_COLOR = Color3.fromRGB(14, 14, 20)
 local STRUCTURE_SIZES: { [string]: number } = { Tower = 9, Barracks = 8, Core = 12 }
 local UNIT_DOT = 4
 local HERO_DOT = 7
@@ -68,17 +70,13 @@ screen.Name = "Minimap"
 screen.ResetOnSpawn = false
 screen.Parent = playerGui
 
-local holder = Instance.new("Frame")
+-- The map sits in a standard HUD surface panel (UI design system).
+local holder = UiTheme.panel(screen)
 holder.Name = "Holder"
 holder.AnchorPoint = Vector2.new(1, 1)
 holder.Position = UDim2.new(1, -MARGIN, 1, -MARGIN)
 holder.Size = UDim2.fromOffset((maxZ - minZ) * scale + 8, (maxX - minX) * scale + 8)
-holder.BackgroundColor3 = FRAME_COLOR
-holder.BackgroundTransparency = 0.15
-holder.Parent = screen
-local holderCorner = Instance.new("UICorner")
-holderCorner.CornerRadius = UDim.new(0, 8)
-holderCorner.Parent = holder
+UiTheme.applyScale(holder)
 
 local map = Instance.new("Frame")
 map.Name = "Map"
@@ -88,6 +86,7 @@ map.BackgroundColor3 = GROUND_COLOR
 map.BorderSizePixel = 0
 map.ClipsDescendants = true
 map.Parent = holder
+UiTheme.corner(map, UiTheme.Radius - 2)
 
 -- A rectangle covering a part's footprint (parts are axis-aligned on this map).
 local function addFootprint(part: BasePart, color: Color3, zIndex: number): Frame
@@ -103,9 +102,7 @@ local function addFootprint(part: BasePart, color: Color3, zIndex: number): Fram
 	return box
 end
 
--- Base floor, fences, trees and rocks: static, drawn once. Trees and rocks are
--- made by the server when the game starts (Landscape), so new ones are added
--- as they arrive.
+-- Base floor, fences, trees and rocks: static map parts, drawn once.
 local playerBase = arena:WaitForChild("PlayerBase")
 local baseFloor = playerBase:WaitForChild("BaseFloor")
 if baseFloor:IsA("BasePart") then
@@ -121,7 +118,6 @@ end
 for _, item in arena:GetDescendants() do
 	addProp(item)
 end
-arena.DescendantAdded:Connect(addProp)
 
 -- Structures: a square each, recoloured on team change, removed when destroyed
 -- (the server destroys the part).

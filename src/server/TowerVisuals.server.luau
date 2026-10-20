@@ -52,11 +52,10 @@ local function dressTower(block: BasePart)
 	-- The saved pivot is upside down, so reset it to upright before measuring.
 	model.WorldPivot = CFrame.new(model:GetPivot().Position)
 
-	-- Turn the model so the knight's face points at the middle of the lane (x = 0).
+	-- Turn the model so the knight faces the battlefield (+X, toward the zombies).
 	local head = model:FindFirstChild("Head")
 	local facing = groundDirection(if head and head:IsA("BasePart") then head.CFrame.LookVector else Vector3.zero)
-	local towardLane = groundDirection(Vector3.new(-block.Position.X, 0, 0))
-	local yaw = math.atan2(facing.Z, facing.X) - math.atan2(towardLane.Z, towardLane.X)
+	local yaw = math.atan2(facing.Z, facing.X) -- turning by this lines the face up with +X
 
 	-- Stand the model on the floor, centred on the block.
 	local boxCFrame, boxSize = model:GetBoundingBox()

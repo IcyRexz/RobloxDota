@@ -6,12 +6,12 @@ This is the implementation target for the co-op base-defense shooter. Nothing li
 **Server** (planned name -> current prototype file it grows from):
 - MissionService: hub/mission state, party, epoch, wave/build phase timers, results. (new; `PlayerTeams.server.luau` today puts everyone on one team)
 - CombatService: the one damage gateway. (`src/server/CombatService.luau`)
-- PlayerService: character marking, class stats, death/respawn. (`src/server/Heroes.server.luau`)
+- PlayerService: character marking, hero stats, death/respawn. (`src/server/Heroes.server.luau`)
 - WeaponService: firing requests, cooldowns, validation. (`src/server/HeroActions.server.luau`)
 - EnemyService: waves, AI, cap, cleanup. (`src/server/Minions.server.luau`)
-- BuildService: build nodes, placing, repair, Gold spending. (new; turret AI from `src/server/Structures.server.luau`, art from `TowerVisuals.server.luau`)
+- BuildService: build nodes, placing, repair, Gold spending. (new; tower AI from `src/server/Structures.server.luau`, art from `TowerVisuals.server.luau`)
 - EconomyService: Gold balances (in-match). (new)
-- ProfileService (own module, not the community library unless the owner approves): DataStore load/save of credits, class levels/XP, items, loadouts. (new)
+- ProfileService (own module, not the community library unless the owner approves): DataStore load/save of credits, hero levels/XP, items, loadouts. (new)
 
 **Client** controllers: Input/Controls, Camera, HUD, Effects, Hub UI, Build UI. Clients may predict indicators but never decide damage, kills, Gold, credits, building, wave state or results.
 
@@ -25,7 +25,7 @@ Created only by the server under `ReplicatedStorage`. Fixed small schemas; rejec
 Planned requests (client -> server), each deny-by-default until its service exists:
 - Weapon fire: action name + aim (direction or target hint, per aim decision). Server derives the origin.
 - Build: node ID + piece ID. Repair: node ID.
-- Hub: pick class, set loadout, buy item, queue/leave queue, ready.
+- Hub: pick hero, set loadout, buy item, queue/leave queue, ready.
 
 Server -> client: state snapshot (phase, wave, timer end in server time, core health, recipient's Gold), cosmetic effects (shots, impacts), announcements. Existing prototype events: `HeroAttack`, `TowerShot`, `MinionShot`, `StructureDestroyed` (to be renamed as their services move over).
 

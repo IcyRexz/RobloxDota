@@ -91,7 +91,7 @@
         "Anchored": true,
         "CanQuery": false,
         "CanTouch": false,
-        "Transparency": 1,
+        "Transparency": 0.4,
         "Size": [
           1,
           9,
@@ -101,7 +101,13 @@
           -70,
           4.5,
           0
-        ]
+        ],
+        "Color": [
+          0.25,
+          0.25,
+          0.28
+        ],
+        "Material": "DiamondPlate"
       },
       "attributes": {
         "Kind": "Fence"
@@ -114,7 +120,7 @@
         "Anchored": true,
         "CanQuery": false,
         "CanTouch": false,
-        "Transparency": 1,
+        "Transparency": 0.4,
         "Size": [
           1,
           9,
@@ -124,7 +130,13 @@
           -151.5,
           4.5,
           0
-        ]
+        ],
+        "Color": [
+          0.25,
+          0.25,
+          0.28
+        ],
+        "Material": "DiamondPlate"
       },
       "attributes": {
         "Kind": "Fence"
@@ -137,7 +149,7 @@
         "Anchored": true,
         "CanQuery": false,
         "CanTouch": false,
-        "Transparency": 1,
+        "Transparency": 0.4,
         "Size": [
           83,
           9,
@@ -147,7 +159,13 @@
           -111.5,
           4.5,
           -67.5
-        ]
+        ],
+        "Color": [
+          0.25,
+          0.25,
+          0.28
+        ],
+        "Material": "DiamondPlate"
       },
       "attributes": {
         "Kind": "Fence"
@@ -271,7 +289,7 @@
         "Anchored": true,
         "CanQuery": false,
         "CanTouch": false,
-        "Transparency": 1,
+        "Transparency": 0.4,
         "Size": [
           83,
           9,
@@ -281,7 +299,13 @@
           -111.5,
           4.5,
           67.5
-        ]
+        ],
+        "Color": [
+          0.25,
+          0.25,
+          0.28
+        ],
+        "Material": "DiamondPlate"
       },
       "attributes": {
         "Kind": "Fence"

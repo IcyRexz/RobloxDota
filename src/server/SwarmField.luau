@@ -89,7 +89,7 @@ local function isObstacle(part: BasePart): boolean
 end
 
 local function rasterize()
-	Landscape.build() -- trees and rocks must exist before the map is read
+	Landscape.build() -- terrain for units to walk on (trees and rocks are map parts)
 	table.clear(blocked)
 	for i = 1, NX * NZ do
 		blocked[i] = false

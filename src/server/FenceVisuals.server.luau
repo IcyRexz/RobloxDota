@@ -1,5 +1,6 @@
 --!strict
--- Dresses every fence segment in the map (invisible Part with Kind = "Fence").
+-- Dresses every fence segment in the map (Part with Kind = "Fence"; a see-through
+-- dark slab in Studio's edit view as a placeholder, hidden here when the art goes on).
 -- Like the towers: the plain block is the real fence (it blocks movement and
 -- the swarm flow fields walk around it); the art is decoration only, so it
 -- never blocks movement, hits or line of sight. Fences cannot be broken

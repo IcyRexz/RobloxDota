@@ -41,7 +41,7 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 
 ### T07 — Player character, death and respawn
 - Depends on: T06. Reuses: `Heroes.server.luau`, old T08.
-- Do: Server-owned health per class (placeholder stats until T18); death rules from the GDD (OPEN items decided first).
+- Do: Server-owned health per hero (placeholder stats until T18); death rules from the GDD (OPEN items decided first).
 - Done when: dead players cannot act; respawn restores controls once. Verify: A05.
 
 ### T08 — Primary weapon firing (PC)
@@ -93,13 +93,13 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 
 ### T17 — Hub area
 - Depends on: T05.
-- Do: Hub zone in the same place; class picker, loadout screen, mission queue pad, map choice limited by level.
-- Done when: players pick a class and loadout and start a mission from the hub. Verify: A03.
+- Do: Hub zone in the same place; hero picker, loadout screen, mission queue pad, map choice limited by level.
+- Done when: players pick a hero and loadout and start a mission from the hub. Verify: A03.
 
-### T18 — Classes
+### T18 — Heroes
 - Depends on: T07 T08 T17.
-- Do: Assault, Engineer, Medic, Heavy stats and abilities (owner design first).
-- Done when: each class plays differently in a mission. Verify: A04.
+- Do: Dota-style hero roster (owner decision 2026-10-21, replacing the four classes): each hero's stats, attack, abilities and talent pool (owner design first; Zeus draft in `docs/10_ZEUS_UPGRADES_PLAN.md`).
+- Done when: each hero plays differently in a mission. Verify: A04.
 
 ### T19 — Weapons and gear
 - Depends on: T08 T17.
@@ -108,12 +108,12 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 
 ### T20 — Persistent progression
 - Depends on: T15 T17.
-- Do: DataStore profile (credits, class levels/XP, owned items, loadouts); load on join, save on change/leave/shutdown; retries; session lock; credits and XP awarded at Results; shop purchases.
+- Do: DataStore profile (credits, hero levels/XP, owned items, loadouts); load on join, save on change/leave/shutdown; retries; session lock; credits and XP awarded at Results; shop purchases.
 - Done when: progress survives rejoin; failures neither lose nor duplicate progress. Verify: A09.
 
 ### T21 — Harder maps and difficulty
 - Depends on: T03 T20.
-- Do: More maps or difficulty tiers unlocked by class level, with better rewards.
+- Do: More maps or difficulty tiers unlocked by hero level, with better rewards.
 - Done when: locked maps cannot be started; unlocked ones pay more. Verify: A06 A09.
 
 ### T22 — Boss final wave
@@ -125,7 +125,7 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 
 ### T23 — HUD and onboarding
 - Depends on: T11 T15. Reuses: `HeroHud.client.luau`, `Announcements.client.luau`, old T19.
-- Do: Gold, wave/phase timer, core bar, ammo, class badge; first-mission hints. (XP bar, level badge wiring and minimap done 2026-10-20.)
+- Do: Gold, wave/phase timer, core bar, hero badge; first-mission hints. (XP bar, level badge wiring and minimap done 2026-10-20.)
 - Done when: a new player understands the goal and how to build without coaching. Verify: A13.
 
 ### T24 — Combat feedback
@@ -167,18 +167,16 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 - Do: README, credits, known issues, tested version and devices.
 - Done when: deliverables match shipped behavior. Verify: A16.
 
-### T32 — Re-theme to soldiers vs zombies
-- Depends on: owner picks each item (theme decided 2026-10-20; brief "Theme").
+### T32 — Fantasy polish: warriors vs zombies
+- Depends on: owner picks each item (theme changed to fantasy warriors 2026-10-21; brief "Theme").
 - Do, one item at a time, art and names only (systems stay):
-  - Our melee minion -> soldier (e.g. bayonet rifle or riot shield) instead of sword.
-  - Our archer minion -> rifleman: rifle instead of bow, tracer instead of arrow (same shot code: aim, travel, damage on arrival).
-  - Tower knight model (`assets/TowerModel.rbxmx`) -> turret or bunker art.
-  - Inhibitors -> barracks or supply depots (display names, look).
-  - Base Core and zombie cores -> military command post and zombie nests/hives (look, names).
-  - Base walls/floor -> sandbags, concrete, fences; banner and UI wording.
-  - Player hero "Zeus" lightning attack -> a gun (lines up with T08).
+  - Our minions: keep sword and bow; a proper warrior look and our side's colours (currently khaki from the soldier theme; colour OPEN).
+  - Tower knight model (`assets/TowerModel.rbxmx`): keep or swap for a ballista or arcane tower.
+  - Inhibitors -> barracks or war camps (display names, look).
+  - Base Core and zombie cores -> a keep or shrine, and zombie nests or plague pits (look, names).
+  - Base floor -> stone or packed earth; fences -> palisades if wanted; banner and UI wording follow `docs/11_UI_DESIGN.md`.
 - Animations follow the standard patterns in `04_CONTROLS_ANIMATIONS.md`.
 - Done when: no medieval placeholder remains in play. Verify: A13.
 
 ## Old MOBA tasks with no direct successor
-Old T09 lane lock order, T14 Arc Bolt and T15 Slip (could return as class abilities in T18), T16 phone duel (folded into T26). See `docs/archive/moba/03_TASKS.md`.
+Old T09 lane lock order, T14 Arc Bolt and T15 Slip (could return as hero abilities in T18), T16 phone duel (folded into T26). See `docs/archive/moba/03_TASKS.md`.

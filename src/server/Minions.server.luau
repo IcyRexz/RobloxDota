@@ -23,6 +23,7 @@ local CombatService = require(script.Parent.CombatService)
 local SwarmField = require(script.Parent.SwarmField)
 local Config = require(ReplicatedStorage.Shared.Config)
 local JointPose = require(ReplicatedStorage.Shared.JointPose)
+local Targeting = require(ReplicatedStorage.Shared.Targeting)
 
 type MinionStats = Config.MinionStats
 
@@ -275,7 +276,7 @@ local function buildTemplate(team: string, stats: MinionStats): Model
 	body:SetAttribute("Team", team)
 	body:SetAttribute("MaxHealth", stats.maxHealth)
 	body:SetAttribute("Health", stats.maxHealth)
-	body:ScaleTo(MinionConfig.Scale) -- smaller than a hero
+	body:ScaleTo(MinionConfig.Scale) -- 1 = player size
 	return body
 end
 
@@ -305,8 +306,8 @@ local function loadTrack(humanoid: Humanoid, animationId: string, looped: boolea
 	return track
 end
 
--- Spawn markers, one per team per lane. Each names its "Source" structure
--- (our inhibitor, or a zombie core); the lane stops spawning once it falls.
+-- Spawn markers. Each names its "Source" structure (our inhibitor, or a zombie
+-- core); the marker stops spawning once that structure falls.
 type SpawnPoint = { marker: BasePart, team: string, source: Instance? }
 local spawnPoints: { SpawnPoint } = {}
 for _, item in arena:GetDescendants() do
@@ -320,7 +321,7 @@ for _, item in arena:GetDescendants() do
 		})
 	end
 end
-table.sort(spawnPoints, function(a, b) -- same order every run (left lane first)
+table.sort(spawnPoints, function(a, b) -- same order every run (left side first)
 	return a.marker.Name < b.marker.Name
 end)
 
@@ -374,9 +375,8 @@ end
 SwarmField.define("ToZombies", { goals = standingCores(ZOMBIES), closed = {} })
 
 -- A fallen structure frees the ground it stood on (and may remove a goal).
-local STRUCTURE_KINDS = { Tower = true, Barracks = true, Core = true }
 CombatService.Died:Connect(function(target: Instance)
-	if target:IsA("BasePart") and STRUCTURE_KINDS[target:GetAttribute("Kind")] then
+	if target:IsA("BasePart") and Targeting.StructureKinds[target:GetAttribute("Kind")] then
 		task.defer(SwarmField.rebuild) -- after Structures.server has removed it
 	end
 end)
@@ -535,52 +535,30 @@ local function targetPoint(target: Instance, from: Vector3): Vector3?
 end
 
 local function drawAggro(minion: Minion, attacker: Instance)
-	if minion.team == ZOMBIES then
-		return -- zombies only ever go for what is nearest (see nearestForZombie)
-	end
 	minion.attacker = attacker
 	minion.structure = nil -- fighting back beats a structure lock
 end
 
--- Aggro (standard rules). Each one breaks a structure lock:
---  * retaliation: a unit damaged by an enemy (unit, hero or tower) turns on that
+-- Aggro for our minions (standard rules; zombies ignore it). Each one breaks
+-- a structure lock:
+--  * retaliation: a unit damaged by an enemy unit or tower turns on that
 --    attacker and chases it while it stays within RetaliateRange
 --  * call for help: same-team units within HelpRange of the victim that are not
 --    already fighting back join in on the same attacker
---  * a hero hit by an enemy hero: that hero's minions within RetaliateRange of
---    the attacker turn on the attacker (MOBA "don't hit heroes near minions")
 CombatService.Damaged:Connect(function(target: Instance, attacker: Instance, attackerTeam: string)
 	local victim = byModel[target]
-	if victim and attackerTeam ~= victim.team and targetPoint(attacker, victim.root.Position) then
-		drawAggro(victim, attacker)
-		for _, ally in alive do
-			if
-				ally ~= victim
-				and ally.team == victim.team
-				and ally.attacker == nil
-				and planarDistance(ally.root.Position, victim.root.Position) <= MinionConfig.HelpRange
-			then
-				drawAggro(ally, attacker)
-			end
-		end
+	if not (victim and attackerTeam ~= victim.team and victim.team ~= ZOMBIES and targetPoint(attacker, victim.root.Position)) then
 		return
 	end
-	local heroTeam = target:GetAttribute("Team")
-	local attackerRoot = attacker:FindFirstChild("HumanoidRootPart")
-	if
-		target:GetAttribute("Kind") == "Hero"
-		and attacker:GetAttribute("Kind") == "Hero"
-		and attacker:GetAttribute("Team") ~= heroTeam
-		and attackerRoot
-		and attackerRoot:IsA("BasePart")
-	then
-		for _, minion in alive do
-			if
-				minion.team == heroTeam
-				and planarDistance(minion.root.Position, attackerRoot.Position) <= MinionConfig.RetaliateRange
-			then
-				drawAggro(minion, attacker)
-			end
+	drawAggro(victim, attacker)
+	for _, ally in alive do
+		if
+			ally ~= victim
+			and ally.team == victim.team
+			and ally.attacker == nil
+			and planarDistance(ally.root.Position, victim.root.Position) <= MinionConfig.HelpRange
+		then
+			drawAggro(ally, attacker)
 		end
 	end
 end)
@@ -588,8 +566,7 @@ end)
 -- Every tower, barracks and core, found once from the map.
 local structures: { BasePart } = {}
 for _, item in arena:GetDescendants() do
-	local kind = item:GetAttribute("Kind")
-	if item:IsA("BasePart") and (kind == "Tower" or kind == "Barracks" or kind == "Core") then
+	if item:IsA("BasePart") and Targeting.StructureKinds[item:GetAttribute("Kind")] then
 		table.insert(structures, item)
 	end
 end
@@ -764,11 +741,18 @@ local function attack(minion: Minion, target: Instance, aimPoint: Vector3, now: 
 		if minion.stats.kind == "Zombie" then
 			-- Hand swipe: every client plays it; the hit lands when the claw comes
 			-- down. A zombie killed mid-swing never lands it.
+			-- The target must still be within reach when the claw lands, so a
+			-- player who steps back during the swing dodges it.
 			local hitDelay = MinionConfig.ZombieSwipeHitDelay
-			local damage, team, zombie = minion.stats.damage, minion.team, minion.model
+			local damage, team, zombie, zombieRoot = minion.stats.damage, minion.team, minion.model, minion.root
+			local reach = minion.stats.attackRange + HOLD_SLACK
 			swingEvent:FireAllClients(zombie, hitDelay)
 			task.delay(hitDelay, function()
-				if CombatService.isAlive(zombie) then
+				if not CombatService.isAlive(zombie) then
+					return
+				end
+				local point = targetPoint(target, zombieRoot.Position)
+				if point and planarDistance(point, zombieRoot.Position) <= reach then
 					CombatService.applyDamage(target, damage, zombie, team)
 				end
 			end)

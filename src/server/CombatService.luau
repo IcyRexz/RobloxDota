@@ -11,6 +11,8 @@ local Targeting = require(ReplicatedStorage.Shared.Targeting)
 local CombatService = {}
 
 local MAX_DAMAGE = 10000 -- no single hit is ever this big; anything larger is a bug
+-- Callers that scale damage up (level-up picks) cap their hits at this.
+CombatService.MaxDamage = MAX_DAMAGE
 
 local diedEvent = Instance.new("BindableEvent")
 -- Fires (target: Instance, killer: Instance, killerTeam: string) once, when a
@@ -24,8 +26,9 @@ local damagedEvent = Instance.new("BindableEvent")
 -- after every hit that deals damage (before Died, if the hit was fatal).
 CombatService.Damaged = damagedEvent.Event
 
--- Development log: prints every death and its killer to Output.
-local LOG_DEATHS = true
+-- Development log: prints every death and its killer to Output. Off by default:
+-- with a 100-unit horde it floods Output; switch on when debugging kills.
+local LOG_DEATHS = false
 
 local function describe(unit: Instance): string
 	local team = unit:GetAttribute("Team")

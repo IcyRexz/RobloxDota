@@ -1,14 +1,16 @@
 --!strict
--- Hero health display on each player's own screen:
---  * bottom-centre HUD for your own hero: level badge, health bar with
---    "current / max" text, xp bar under it and four skill slots with cooldown
---    covers (only the basic attack is live). Level and xp follow the server's
---    Level / Xp / XpToNext attributes on the Player; nothing awards xp yet, so
---    they show LV 1 and 0 XP until that system exists.
---  * over every other hero's head: the player's name and a segmented health bar
---    (green your team, red the enemy), one divider per 100 health. Your own has
---    none: the camera is first person, so it would float in your view.
--- Both bars show a pale "recent damage" chunk that drains shortly after a hit.
+-- Hero HUD on each player's own screen, in the game's UI design system
+-- (docs/11_UI_DESIGN.md, values from UiTheme):
+--  * bottom centre, your own hero: a level ring (gold), hero name and
+--    "current / max" above a thin health bar, a thin gold XP bar, and four
+--    ability slots with cooldown covers (only the basic attack is live).
+--    Level and XP follow the server's Level / Xp / XpToNext Player attributes.
+--    While a talent pick is waiting (UpgradesPending > 0) a gold "U" pill sits
+--    above the ring; clicking the ring (or pressing U) opens the Character Menu
+--    (CharacterMenu.client).
+--  * over every other hero's head: their name above a thin health bar (green
+--    your side, red the enemy). Your own has none: the camera is first person.
+-- The health bars show a pale "recent damage" chunk that drains shortly after a hit.
 -- Display only: the server owns hero health (the Health/MaxHealth attributes).
 -- Desktop layout for now; the phone layout is decided when touch controls are built.
 
@@ -20,20 +22,19 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
-local ALLY_COLOR = Color3.fromRGB(70, 200, 90)
-local ENEMY_COLOR = Color3.fromRGB(220, 60, 60)
-local DAMAGE_CHIP_COLOR = Color3.fromRGB(255, 235, 200)
-local BACK_COLOR = Color3.fromRGB(20, 20, 26)
-local PANEL_COLOR = Color3.fromRGB(14, 14, 20)
-local BADGE_STROKE = Color3.fromRGB(150, 110, 230)
-local XP_COLOR = Color3.fromRGB(150, 110, 230)
-local XP_BACK_COLOR = Color3.fromRGB(45, 38, 70)
+local Font = UiTheme.Font
+local Size = UiTheme.TextSize
+local Strength = UiTheme.Strength
+local space = UiTheme.space
+
 local CHIP_DELAY = 0.35 -- seconds before the recent-damage chunk drains
 local CHIP_DRAIN = 0.3
-local HP_PER_TICK = 100
-local BOLD = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy)
-local MEDIUM = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
+local CHIP_TRANSPARENCY = 0.5 -- the chunk is white at 50%
+local RING_SIZE = 52
+local BLOCK_WIDTH = 300
+local SLOT_SIZE = 40
 -- Players are always on our side; used until the server sets the attribute.
 local DEFAULT_TEAM = Config.Teams.Defenders
 
@@ -58,187 +59,6 @@ local function readHealth(character: Model): (number, number)
 	return current, max
 end
 
-local function corner(parent: Instance, radius: number)
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, radius)
-	c.Parent = parent
-end
-
-local function newText(parent: Instance, font: Font, size: number): TextLabel
-	local label = Instance.new("TextLabel")
-	label.BackgroundTransparency = 1
-	label.FontFace = font
-	label.TextSize = size
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.TextStrokeTransparency = 0.3
-	label.Size = UDim2.fromScale(1, 1)
-	label.Parent = parent
-	return label
-end
-
--- A health bar: dark back, pale damage chip behind the colored fill, optional
--- dividers. setBar updates it.
-type BarParts = { back: Frame, chip: Frame, fill: Frame, ticks: Frame? }
-
-local function buildBar(parent: Instance, radius: number, withTicks: boolean): BarParts
-	local back = Instance.new("Frame")
-	back.Name = "Bar"
-	back.BackgroundColor3 = BACK_COLOR
-	back.BorderSizePixel = 0
-	back.ClipsDescendants = true
-	back.Parent = parent
-	corner(back, radius)
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.new(0, 0, 0)
-	stroke.Thickness = 1.5
-	stroke.Parent = back
-
-	local chip = Instance.new("Frame")
-	chip.Name = "DamageChip"
-	chip.BackgroundColor3 = DAMAGE_CHIP_COLOR
-	chip.BorderSizePixel = 0
-	chip.Size = UDim2.fromScale(1, 1)
-	chip.Parent = back
-	corner(chip, radius)
-
-	local fill = Instance.new("Frame")
-	fill.Name = "Fill"
-	fill.BorderSizePixel = 0
-	fill.Size = UDim2.fromScale(1, 1)
-	fill.Parent = back
-	corner(fill, radius)
-	-- Slight top shine.
-	local shine = Instance.new("UIGradient")
-	shine.Rotation = 90
-	shine.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(170, 170, 170))
-	shine.Parent = fill
-
-	local ticks: Frame? = nil
-	if withTicks then
-		local t = Instance.new("Frame")
-		t.Name = "Ticks"
-		t.BackgroundTransparency = 1
-		t.Size = UDim2.fromScale(1, 1)
-		t.Parent = back
-		ticks = t
-	end
-	return { back = back, chip = chip, fill = fill, ticks = ticks }
-end
-
-local function redrawTicks(parts: BarParts, max: number)
-	local ticks = parts.ticks
-	if not ticks then
-		return
-	end
-	ticks:ClearAllChildren()
-	for i = 1, math.floor((max - 1) / HP_PER_TICK) do
-		local line = Instance.new("Frame")
-		line.BorderSizePixel = 0
-		line.BackgroundColor3 = BACK_COLOR
-		line.BackgroundTransparency = 0.3
-		line.Size = UDim2.new(0, 1, 1, 0)
-		line.Position = UDim2.fromScale(i * HP_PER_TICK / max, 0)
-		line.Parent = ticks
-	end
-end
-
--- Moves the fill at once and lets the damage chip catch up after a moment.
-local function setBar(parts: BarParts, current: number, max: number, color: Color3)
-	local share = current / max
-	parts.fill.BackgroundColor3 = color
-	parts.fill.Size = UDim2.fromScale(share, 1)
-	if share >= parts.chip.Size.X.Scale then
-		parts.chip.Size = UDim2.fromScale(share, 1) -- healed: no chip
-	else
-		TweenService:Create(
-			parts.chip,
-			TweenInfo.new(CHIP_DRAIN, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, CHIP_DELAY),
-			{ Size = UDim2.fromScale(share, 1) }
-		):Play()
-	end
-end
-
--- Centre HUD (your own hero) -------------------------------------------------
--- Bottom centre, two rows:
---   [LV 1] [ZEUS ======= 600 / 600 ==========]
---          [=========== 0 / 100 XP ==========]
---   [ATTACK] [ 1 ] [ 2 ] [ULT]   skill slots; only the basic attack works so far
--- Slots are buttons (HeroControls.client sends the attack when the Attack slot
--- is pressed), ready for touch later.
-
-local SLOT_SIZE = 62
-local SLOT_GAP = 10
-local PANEL_WIDTH = 4 * SLOT_SIZE + 3 * SLOT_GAP + 160
-
-type Slot = { button: TextButton, cooldown: Frame, cooldownText: TextLabel, readyAttribute: string? }
-
-local screen = Instance.new("ScreenGui")
-screen.Name = "HeroHud"
-screen.ResetOnSpawn = false
-screen.Parent = playerGui
-
-local panel = Instance.new("Frame")
-panel.Name = "Panel"
-panel.AnchorPoint = Vector2.new(0.5, 1)
-panel.Position = UDim2.new(0.5, 0, 1, -14)
-panel.Size = UDim2.fromOffset(PANEL_WIDTH, 52 + 12 + SLOT_SIZE + 14)
-panel.BackgroundTransparency = 1
-panel.Parent = screen
-
--- Row 1: level badge and health bar.
-local badge = Instance.new("Frame")
-badge.Name = "LevelBadge"
-badge.Size = UDim2.fromOffset(64, 52)
-badge.BackgroundColor3 = PANEL_COLOR
-badge.BackgroundTransparency = 0.1
-badge.Parent = panel
-corner(badge, 10)
-local badgeStroke = Instance.new("UIStroke")
-badgeStroke.Color = BADGE_STROKE
-badgeStroke.Thickness = 2.5
-badgeStroke.Parent = badge
-local levelText = newText(badge, BOLD, 20)
-levelText.Text = "LV 1"
-
-local hudBar = buildBar(panel, 8, false)
-hudBar.back.Position = UDim2.fromOffset(74, 0)
-hudBar.back.Size = UDim2.new(1, -74, 0, 34)
-local hudText = newText(hudBar.back, BOLD, 19)
-hudText.ZIndex = 3
-
-local heroNameText = newText(hudBar.back, MEDIUM, 13)
-heroNameText.TextXAlignment = Enum.TextXAlignment.Left
-heroNameText.Position = UDim2.fromOffset(10, 0)
-heroNameText.Size = UDim2.new(0, 100, 1, 0)
-heroNameText.ZIndex = 3
-
--- XP bar directly under the health bar: purple fill on a dim purple track
--- (no black outline), "xp / next XP" text on top.
-local xpBack = Instance.new("Frame")
-xpBack.Name = "XpBar"
-xpBack.Position = UDim2.fromOffset(74, 38)
-xpBack.Size = UDim2.new(1, -74, 0, 14)
-xpBack.BackgroundColor3 = XP_BACK_COLOR
-xpBack.BorderSizePixel = 0
-xpBack.ClipsDescendants = true
-xpBack.Parent = panel
-corner(xpBack, 5)
-
-local xpFill = Instance.new("Frame")
-xpFill.Name = "Fill"
-xpFill.BackgroundColor3 = XP_COLOR
-xpFill.BorderSizePixel = 0
-xpFill.Size = UDim2.fromScale(0, 1)
-xpFill.Parent = xpBack
-corner(xpFill, 5)
-local xpShine = Instance.new("UIGradient")
-xpShine.Rotation = 90
-xpShine.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(170, 170, 170))
-xpShine.Parent = xpFill
-
-local xpText = newText(xpBack, BOLD, 11)
-xpText.ZIndex = 3
-
 local function readWholeNumber(name: string): number?
 	local value = player:GetAttribute(name)
 	if type(value) ~= "number" or value ~= value or value < 0 or value > 1e9 then
@@ -247,35 +67,155 @@ local function readWholeNumber(name: string): number?
 	return math.floor(value)
 end
 
+-- A health bar with the pale recent-damage chunk behind its fill.
+type HealthBar = { track: Frame, chip: Frame, fill: Frame }
+
+local function healthBar(parent: Instance, height: number): HealthBar
+	local bar = UiTheme.bar(parent, height, UiTheme.Ally)
+	local chip = Instance.new("Frame")
+	chip.Name = "DamageChip"
+	chip.Size = UDim2.fromScale(1, 1)
+	chip.BackgroundColor3 = UiTheme.Text
+	chip.BackgroundTransparency = CHIP_TRANSPARENCY
+	chip.BorderSizePixel = 0
+	chip.ZIndex = 1
+	chip.Parent = bar.track
+	UiTheme.corner(chip, math.ceil(height / 2))
+	bar.fill.ZIndex = 2 -- the fill draws over the chunk
+	return { track = bar.track, chip = chip, fill = bar.fill }
+end
+
+-- Moves the fill at once and lets the damage chip catch up after a moment.
+local function setHealth(bar: HealthBar, current: number, max: number, color: Color3)
+	local share = current / max
+	bar.fill.BackgroundColor3 = color
+	bar.fill.Size = UDim2.fromScale(share, 1)
+	if share >= bar.chip.Size.X.Scale then
+		bar.chip.Size = UDim2.fromScale(share, 1) -- healed: no chip
+	else
+		TweenService:Create(
+			bar.chip,
+			TweenInfo.new(CHIP_DRAIN, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, CHIP_DELAY),
+			{ Size = UDim2.fromScale(share, 1) }
+		):Play()
+	end
+end
+
+-- Bottom HUD ---------------------------------------------------------------------------
+-- [ring]  Zeus                     600 / 600
+--         ==================================   health (8 px)
+--         ------------                         xp (3 px, gold)
+--         [BOLT] [ 1 ] [ 2 ] [ 3 ]             ability slots
+
+local screen = Instance.new("ScreenGui")
+screen.Name = "HeroHud"
+screen.ResetOnSpawn = false
+screen.Parent = playerGui
+
+local BLOCK_X = RING_SIZE + space(3)
+local SLOTS_Y = space(11) -- below the name, health bar and XP bar
+local panel = Instance.new("Frame")
+panel.Name = "Panel"
+panel.AnchorPoint = Vector2.new(0.5, 1)
+panel.Position = UDim2.new(0.5, 0, 1, -space(4))
+panel.Size = UDim2.fromOffset(BLOCK_X + BLOCK_WIDTH, SLOTS_Y + SLOT_SIZE)
+panel.BackgroundTransparency = 1
+panel.Parent = screen
+UiTheme.applyScale(panel)
+
+-- Level ring (the badge). Named LevelBadge / OpenUpgrades for CharacterMenu.client.
+local badge = UiTheme.panel(panel, nil, RING_SIZE // 2)
+badge.Name = "LevelBadge"
+badge.Size = UDim2.fromOffset(RING_SIZE, RING_SIZE)
+local ring = Instance.new("UIStroke")
+ring.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+ring.Color = UiTheme.Gold
+ring.Thickness = 2
+ring.Parent = badge
+local levelCaption = UiTheme.text(badge, 9, Font.Bold, Strength.Label)
+levelCaption.Position = UDim2.fromOffset(0, 9)
+levelCaption.Size = UDim2.new(1, 0, 0, 10)
+levelCaption.TextXAlignment = Enum.TextXAlignment.Center
+levelCaption.Text = "LV"
+local levelText = UiTheme.text(badge, 20, Font.Heavy)
+levelText.Position = UDim2.fromOffset(0, 19)
+levelText.Size = UDim2.new(1, 0, 0, 22)
+levelText.TextXAlignment = Enum.TextXAlignment.Center
+levelText.Text = "1"
+local badgeButton = Instance.new("TextButton")
+badgeButton.Name = "OpenUpgrades"
+badgeButton.BackgroundTransparency = 1
+badgeButton.Text = ""
+badgeButton.Size = UDim2.fromScale(1, 1)
+badgeButton.ZIndex = 3
+badgeButton.Parent = badge
+
+-- Gold "U" pill above the ring while a talent pick is waiting.
+local pickHint = Instance.new("Frame")
+pickHint.Name = "PickHint"
+pickHint.AnchorPoint = Vector2.new(0.5, 1)
+pickHint.Position = UDim2.new(0.5, 0, 0, -space(1))
+pickHint.Size = UDim2.fromOffset(space(15), 18)
+pickHint.BackgroundColor3 = UiTheme.Gold
+pickHint.BorderSizePixel = 0
+pickHint.Visible = false
+pickHint.Parent = badge
+UiTheme.corner(pickHint, 9)
+local pickHintText = UiTheme.text(pickHint, Size.Caption, Font.Heavy)
+pickHintText.Size = UDim2.fromScale(1, 1)
+pickHintText.TextXAlignment = Enum.TextXAlignment.Center
+pickHintText.TextColor3 = UiTheme.OnGold
+pickHintText.Text = "U  talent"
+
+-- Name and health numbers above the bar.
+local block = Instance.new("Frame")
+block.Name = "Status"
+block.Position = UDim2.fromOffset(BLOCK_X, 0)
+block.Size = UDim2.fromOffset(BLOCK_WIDTH, SLOTS_Y)
+block.BackgroundTransparency = 1
+block.Parent = panel
+
+local heroNameText = UiTheme.text(block, Size.Small, Font.Bold, Strength.Label)
+heroNameText.Size = UDim2.new(0.5, 0, 0, 16)
+UiTheme.floatingText(heroNameText)
+local hudText = UiTheme.text(block, Size.Small, Font.Bold)
+hudText.AnchorPoint = Vector2.new(1, 0)
+hudText.Position = UDim2.fromScale(1, 0)
+hudText.Size = UDim2.new(0.5, 0, 0, 16)
+hudText.TextXAlignment = Enum.TextXAlignment.Right
+UiTheme.floatingText(hudText)
+
+local hudBar = healthBar(block, UiTheme.Bar.Health)
+hudBar.track.Position = UDim2.fromOffset(0, space(5))
+
+local xpBar = UiTheme.bar(block, UiTheme.Bar.Xp, UiTheme.Gold)
+xpBar.track.Name = "XpBar"
+xpBar.track.Position = UDim2.fromOffset(0, space(5) + UiTheme.Bar.Health + space(1))
+xpBar.fill.Size = UDim2.fromScale(0, 1)
+
 local function refreshXp()
 	local level = readWholeNumber("Level") or 1
 	local xp = readWholeNumber("Xp") or 0
 	local toNext = readWholeNumber("XpToNext")
-	levelText.Text = `LV {math.max(level, 1)}`
-	if toNext and toNext > 0 then
-		xpFill.Size = UDim2.fromScale(math.clamp(xp / toNext, 0, 1), 1)
-		xpText.Text = `{xp} / {toNext} XP`
-	else
-		xpFill.Size = UDim2.fromScale(0, 1)
-		xpText.Text = `{xp} XP`
-	end
+	levelText.Text = tostring(math.max(level, 1))
+	xpBar.fill.Size = UDim2.fromScale(if toNext and toNext > 0 then math.clamp(xp / toNext, 0, 1) else 0, 1)
+	pickHint.Visible = (readWholeNumber("UpgradesPending") or 0) > 0
 end
 refreshXp()
 player.AttributeChanged:Connect(refreshXp)
 
--- Row 2: skill slots.
+-- Ability slots.
+type Slot = { button: TextButton, cooldown: Frame, cooldownText: TextLabel, readyAttribute: string? }
+
 local slotRow = Instance.new("Frame")
 slotRow.Name = "Skills"
-slotRow.AnchorPoint = Vector2.new(0.5, 1)
-slotRow.Position = UDim2.fromScale(0.5, 1)
-slotRow.Size = UDim2.fromOffset(4 * SLOT_SIZE + 3 * SLOT_GAP, SLOT_SIZE + 10)
+slotRow.Position = UDim2.fromOffset(BLOCK_X, SLOTS_Y)
+slotRow.Size = UDim2.fromOffset(BLOCK_WIDTH, SLOT_SIZE)
 slotRow.BackgroundTransparency = 1
 slotRow.Parent = panel
 local layout = Instance.new("UIListLayout")
 layout.FillDirection = Enum.FillDirection.Horizontal
-layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-layout.Padding = UDim.new(0, SLOT_GAP)
+layout.Padding = UDim.new(0, space(2))
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = slotRow
 
@@ -286,56 +226,49 @@ local function addSlot(name: string, label: string, key: string, order: number, 
 	button.Name = name
 	button.LayoutOrder = order
 	button.Size = UDim2.fromOffset(SLOT_SIZE, SLOT_SIZE)
-	button.BackgroundColor3 = if locked then Color3.fromRGB(30, 30, 36) else Color3.fromRGB(40, 50, 80)
+	button.BackgroundColor3 = UiTheme.Surface
+	button.BackgroundTransparency = if locked then 0.65 else UiTheme.SurfaceTransparency
 	button.AutoButtonColor = not locked
 	button.Text = ""
 	button.Active = not locked
 	button.Parent = slotRow
-	corner(button, 10)
-	local stroke = Instance.new("UIStroke")
-	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	stroke.Color = if locked then Color3.fromRGB(70, 70, 80) else Color3.fromRGB(120, 170, 255)
-	stroke.Thickness = 2
-	stroke.Parent = button
+	UiTheme.corner(button)
 
-	local caption = newText(button, BOLD, 12)
-	caption.Text = if locked then label .. "\nlocked" else label
-	caption.TextColor3 = if locked then Color3.fromRGB(150, 150, 160) else Color3.new(1, 1, 1)
-
-	-- Key hint chip in the top-left corner (desktop test keys).
-	local chip = Instance.new("Frame")
-	chip.Position = UDim2.fromOffset(-6, -8)
-	chip.Size = UDim2.fromOffset(26, 16)
-	chip.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
-	chip.ZIndex = 4
-	chip.Parent = button
-	corner(chip, 4)
-	local keyText = newText(chip, BOLD, 10)
+	local keyText = UiTheme.text(button, 9, Font.Bold, Strength.Faint)
+	keyText.Position = UDim2.fromOffset(space(1), 2)
+	keyText.Size = UDim2.fromOffset(SLOT_SIZE, 10)
 	keyText.Text = key
-	keyText.ZIndex = 5
 
-	-- Cooldown: a dark cover that shrinks downward, with seconds left.
+	local caption = UiTheme.text(button, Size.Caption, Font.Heavy, if locked then Strength.Faint else Strength.Value)
+	caption.Position = UDim2.fromOffset(0, 6)
+	caption.Size = UDim2.fromScale(1, 1)
+	caption.TextXAlignment = Enum.TextXAlignment.Center
+	caption.Text = label
+
+	-- Cooldown: a darker cover that shrinks downward, with seconds left.
 	local cover = Instance.new("Frame")
 	cover.Name = "Cooldown"
 	cover.AnchorPoint = Vector2.new(0, 1)
 	cover.Position = UDim2.fromScale(0, 1)
 	cover.Size = UDim2.fromScale(1, 0)
-	cover.BackgroundColor3 = Color3.new(0, 0, 0)
-	cover.BackgroundTransparency = 0.35
+	cover.BackgroundColor3 = UiTheme.Surface
+	cover.BackgroundTransparency = 0.25
 	cover.BorderSizePixel = 0
 	cover.ZIndex = 2
 	cover.Parent = button
-	corner(cover, 10)
-	local coverText = newText(cover, BOLD, 16)
+	UiTheme.corner(cover)
+	local coverText = UiTheme.text(cover, Size.Body, Font.Heavy)
+	coverText.Size = UDim2.fromScale(1, 1)
+	coverText.TextXAlignment = Enum.TextXAlignment.Center
 	coverText.ZIndex = 3
 
 	table.insert(slots, { button = button, cooldown = cover, cooldownText = coverText, readyAttribute = readyAttribute })
 end
 
-addSlot("Attack", "ATTACK", "LMB", 1, false, "PulseReadyAt")
-addSlot("Skill1", "SKILL 1", "1", 2, true, nil)
-addSlot("Skill2", "SKILL 2", "2", 3, true, nil)
-addSlot("Ultimate", "ULT", "3", 4, true, nil)
+addSlot("Attack", "BOLT", "LMB", 1, false, "PulseReadyAt")
+addSlot("Skill1", "1", "", 2, true, nil)
+addSlot("Skill2", "2", "", 3, true, nil)
+addSlot("Ultimate", "3", "", 4, true, nil)
 
 -- Cooldown covers follow the server's "<Action>ReadyAt" attributes (server time).
 local cooldownLengths: { [string]: number } = { PulseReadyAt = Config.Hero.Pulse.Cooldown }
@@ -357,29 +290,33 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-local hudConnection: RBXScriptConnection? = nil
+local hudConnections: { RBXScriptConnection } = {}
 
 local function refreshHud(character: Model)
 	local current, max = readHealth(character)
-	setBar(hudBar, current, max, ALLY_COLOR)
+	setHealth(hudBar, current, max, UiTheme.Ally)
 	hudText.Text = `{math.ceil(current)} / {max}`
 	local heroName = character:GetAttribute("HeroName")
-	heroNameText.Text = string.upper(if type(heroName) == "string" then heroName else "Hero")
+	heroNameText.Text = if type(heroName) == "string" then heroName else "Hero"
 end
 
 local function watchOwnHero(character: Model)
-	if hudConnection then
-		hudConnection:Disconnect()
+	for _, connection in hudConnections do
+		connection:Disconnect()
 	end
+	table.clear(hudConnections)
 	hudBar.chip.Size = UDim2.fromScale(1, 1)
 	refreshHud(character)
-	hudConnection = character.AttributeChanged:Connect(function()
-		refreshHud(character)
-	end)
+	-- Only the attributes the HUD shows (not e.g. the attack cooldown, which changes every shot).
+	for _, name in { "Health", "MaxHealth", "HeroName" } do
+		table.insert(hudConnections, character:GetAttributeChangedSignal(name):Connect(function()
+			refreshHud(character)
+		end))
+	end
 end
 
--- Overhead bars (other heroes) ------------------------------------------------
--- Shown within Config.Display.HealthBarRange of your hero.
+-- Overhead bars (other heroes) ------------------------------------------------------
+-- Name above a thin bar, shown within Config.Display.HealthBarRange of your hero.
 
 type Overhead = { billboard: BillboardGui, character: Model, alive: boolean }
 local overheads: { [Model]: Overhead } = {}
@@ -406,31 +343,33 @@ local function addOverhead(owner: Player, character: Model)
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "HeroBar"
 	billboard.Adornee = head
-	billboard.Size = UDim2.fromOffset(120, 30)
-	billboard.StudsOffset = Vector3.new(0, 2.8, 0)
+	billboard.Size = UDim2.fromOffset(110, 22)
+	billboard.StudsOffset = Vector3.new(0, 2.6, 0)
 	billboard.LightInfluence = 0
 	local overhead: Overhead = { billboard = billboard, character = character, alive = false }
 	overheads[character] = overhead
 
-	local nameLabel = newText(billboard, MEDIUM, 13)
-	nameLabel.Size = UDim2.new(1, 0, 0, 16)
+	local nameLabel = UiTheme.text(billboard, Size.Small, Font.Bold)
+	nameLabel.Size = UDim2.new(1, 0, 0, 14)
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
 	nameLabel.Text = owner.DisplayName
+	UiTheme.floatingText(nameLabel)
 
-	local parts = buildBar(billboard, 3, true)
-	parts.back.Position = UDim2.fromOffset(0, 17)
-	parts.back.Size = UDim2.new(1, 0, 0, 11)
+	local bar = healthBar(billboard, UiTheme.Bar.Unit)
+	bar.track.Position = UDim2.fromOffset(0, 17)
 
 	local function refresh()
 		local current, max = readHealth(character)
 		local ally = character:GetAttribute("Team") == localTeam()
-		setBar(parts, current, max, if ally then ALLY_COLOR else ENEMY_COLOR)
-		redrawTicks(parts, max)
+		setHealth(bar, current, max, if ally then UiTheme.Ally else UiTheme.Enemy)
 		-- Only heroes get a bar; hide it until the server marks the character.
 		overhead.alive = character:GetAttribute("Kind") == "Hero" and current > 0
 		updateOverheadVisibility(overhead)
 	end
 	refresh()
-	character.AttributeChanged:Connect(refresh) -- ends when the character is removed
+	for _, name in { "Health", "MaxHealth", "Team", "Kind" } do
+		character:GetAttributeChangedSignal(name):Connect(refresh) -- ends when the character is removed
+	end
 	local teamConnection = player:GetAttributeChangedSignal("Team"):Connect(refresh)
 	character.AncestryChanged:Connect(function()
 		if not character:IsDescendantOf(game) then

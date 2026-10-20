@@ -1,7 +1,9 @@
 --!strict
--- Draws a MOBA-style name and health bar above every tower, barracks and core.
--- Green bar = your team, red bar = the enemy. This runs on each player's own
--- screen because "ally" and "enemy" depend on who is looking.
+-- Name and health bar above every tower, barracks and core, in the game's UI
+-- design system (docs/11_UI_DESIGN.md): the name in floating white text above
+-- a thin 5 px bar, green for your side, red for the enemy. No numbers inside
+-- the bar, no segment ticks. Runs on each player's own screen because "ally"
+-- and "enemy" depend on who is looking. Shown within Config.Display.HealthBarRange.
 -- The bars only display health; the server owns the real numbers (the
 -- structure's Health / MaxHealth attributes) and the bars follow them.
 
@@ -10,15 +12,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Targeting = require(ReplicatedStorage.Shared.Targeting)
+local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
-local ALLY_COLOR = Color3.fromRGB(70, 200, 90)
-local ENEMY_COLOR = Color3.fromRGB(220, 60, 60)
-local BAR_BACK_COLOR = Color3.fromRGB(25, 25, 30)
-local BAR_WIDTH = 150 -- on-screen pixels, so it stays readable at any distance
-local BAR_HEIGHT = 14
-local NAME_HEIGHT = 18
-local HP_PER_TICK = 100 -- one divider line per 100 health, like MOBA bars
-local STRUCTURE_KINDS = { Tower = true, Barracks = true, Core = true }
+local BAR_WIDTH = 120 -- on-screen pixels, so it stays readable at any distance
+local NAME_HEIGHT = 16
 local VISIBILITY_CHECK_SECONDS = 0.2
 -- Players are always on our side; used until the server sets the attribute.
 local DEFAULT_TEAM = Config.Teams.Defenders
@@ -27,13 +25,7 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local arena = Workspace:WaitForChild("Arena")
 
-type Bar = {
-	billboard: BillboardGui,
-	structure: BasePart,
-	fill: Frame,
-	ticks: Frame,
-	hpText: TextLabel,
-}
+type Bar = { billboard: BillboardGui, structure: BasePart, fill: Frame }
 local bars: { Bar } = {}
 
 local function localTeam(): string
@@ -49,82 +41,32 @@ local function readHealth(structure: BasePart): (number, number)
 	return current, max
 end
 
-local function newText(name: string, textSize: number): TextLabel
-	local label = Instance.new("TextLabel")
-	label.Name = name
-	label.BackgroundTransparency = 1
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.TextStrokeTransparency = 0
-	label.TextSize = textSize
-	label.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
-	return label
-end
-
-local function redrawTicks(bar: Bar, max: number)
-	bar.ticks:ClearAllChildren()
-	local count = math.floor((max - 1) / HP_PER_TICK)
-	for i = 1, count do
-		local tick = Instance.new("Frame")
-		tick.BorderSizePixel = 0
-		tick.BackgroundColor3 = BAR_BACK_COLOR
-		tick.BackgroundTransparency = 0.4
-		tick.Size = UDim2.new(0, 1, 1, 0)
-		tick.Position = UDim2.fromScale(i * HP_PER_TICK / max, 0)
-		tick.Parent = bar.ticks
-	end
-end
-
 local function refresh(bar: Bar)
 	local current, max = readHealth(bar.structure)
 	local isAlly = bar.structure:GetAttribute("Team") == localTeam()
-	bar.fill.BackgroundColor3 = if isAlly then ALLY_COLOR else ENEMY_COLOR
+	bar.fill.BackgroundColor3 = if isAlly then UiTheme.Ally else UiTheme.Enemy
 	bar.fill.Size = UDim2.fromScale(current / max, 1)
-	bar.hpText.Text = string.format("%d / %d", math.ceil(current), max)
-	redrawTicks(bar, max)
 end
 
 local function createBar(structure: BasePart)
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = structure.Name .. "Bar"
 	billboard.Adornee = structure
-	billboard.Size = UDim2.fromOffset(BAR_WIDTH, NAME_HEIGHT + BAR_HEIGHT)
+	billboard.Size = UDim2.fromOffset(BAR_WIDTH, NAME_HEIGHT + 4 + UiTheme.Bar.Structure)
 	billboard.StudsOffset = Vector3.new(0, structure.Size.Y / 2 + 3, 0)
 	billboard.LightInfluence = 0
 	billboard.ResetOnSpawn = false
 
-	local nameLabel = newText("Name", 14)
+	local nameLabel = UiTheme.text(billboard, UiTheme.TextSize.Small, UiTheme.Font.Bold)
 	nameLabel.Size = UDim2.new(1, 0, 0, NAME_HEIGHT)
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
 	nameLabel.Text = structure.Name:gsub("(%l)(%u)", "%1 %2") -- "LeftTower" -> "Left Tower"
-	nameLabel.Parent = billboard
+	UiTheme.floatingText(nameLabel)
 
-	local back = Instance.new("Frame")
-	back.Name = "Back"
-	back.BorderSizePixel = 0
-	back.BackgroundColor3 = BAR_BACK_COLOR
-	back.Position = UDim2.fromOffset(0, NAME_HEIGHT)
-	back.Size = UDim2.new(1, 0, 0, BAR_HEIGHT)
-	back.Parent = billboard
-	local outline = Instance.new("UIStroke")
-	outline.Color = Color3.new(0, 0, 0)
-	outline.Thickness = 1
-	outline.Parent = back
+	local parts = UiTheme.bar(billboard, UiTheme.Bar.Structure, UiTheme.Ally)
+	parts.track.Position = UDim2.fromOffset(0, NAME_HEIGHT + 4)
 
-	local fill = Instance.new("Frame")
-	fill.Name = "Fill"
-	fill.BorderSizePixel = 0
-	fill.Parent = back
-
-	local ticks = Instance.new("Frame")
-	ticks.Name = "Ticks"
-	ticks.BackgroundTransparency = 1
-	ticks.Size = UDim2.fromScale(1, 1)
-	ticks.Parent = back
-
-	local hpText = newText("Health", 11)
-	hpText.Size = UDim2.fromScale(1, 1)
-	hpText.Parent = back
-
-	local bar: Bar = { billboard = billboard, structure = structure, fill = fill, ticks = ticks, hpText = hpText }
+	local bar: Bar = { billboard = billboard, structure = structure, fill = parts.fill }
 	table.insert(bars, bar)
 	refresh(bar)
 	structure:GetAttributeChangedSignal("Health"):Connect(function()
@@ -148,7 +90,7 @@ local function createBar(structure: BasePart)
 end
 
 for _, item in arena:GetDescendants() do
-	if item:IsA("BasePart") and STRUCTURE_KINDS[item:GetAttribute("Kind")] then
+	if item:IsA("BasePart") and Targeting.StructureKinds[item:GetAttribute("Kind")] then
 		createBar(item)
 	end
 end

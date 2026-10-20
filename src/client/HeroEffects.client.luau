@@ -1,7 +1,8 @@
 --!strict
 -- Hero attack effects on each player's own screen:
---  * Zeus's basic attack: a short jagged lightning bolt from his hand to the
---    target, plus a small flash
+--  * Zeus's basic attack: a short jagged lightning bolt from his hand to where
+--    the shot ended (the enemy hit, or the end of its range on a miss), plus a
+--    small flash
 --  * the target flashes white for a moment
 --  * a damage number pops up over the target: white for hits you dealt, red
 --    for hits you took (other players' fights show no numbers)
@@ -12,6 +13,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
+local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
+
 local BOLT_COLOR = Color3.fromRGB(150, 210, 255)
 local BOLT_SEGMENTS = 6
 local BOLT_JITTER = 1.2 -- studs a kink may stray from the straight line
@@ -21,8 +24,9 @@ local BOLT_SECONDS = 0.18
 local HIT_FLASH_SECONDS = 0.12
 local NUMBER_RISE = 3 -- studs the damage number floats up
 local NUMBER_SECONDS = 0.7
-local DEALT_COLOR = Color3.fromRGB(255, 255, 255)
-local TAKEN_COLOR = Color3.fromRGB(255, 80, 70)
+-- Damage numbers follow the UI design system (docs/11_UI_DESIGN.md).
+local DEALT_COLOR = UiTheme.Text
+local TAKEN_COLOR = UiTheme.Enemy
 
 local player = Players.LocalPlayer
 local attackEvent = ReplicatedStorage:WaitForChild("HeroAttack") :: RemoteEvent
@@ -137,10 +141,11 @@ local function showNumber(at: Vector3, amount: number, color: Color3)
 	local label = Instance.new("TextLabel")
 	label.BackgroundTransparency = 1
 	label.Size = UDim2.fromScale(1, 1)
-	label.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy)
+	label.FontFace = UiTheme.Font.Heavy
 	label.TextSize = 22
 	label.TextColor3 = color
-	label.TextStrokeTransparency = 0.2
+	label.TextStrokeColor3 = UiTheme.Surface
+	label.TextStrokeTransparency = 0.4
 	label.Text = tostring(math.round(amount))
 	label.Parent = billboard
 
@@ -153,24 +158,28 @@ local function showNumber(at: Vector3, amount: number, color: Color3)
 	fade:Play()
 end
 
-attackEvent.OnClientEvent:Connect(function(attacker: unknown, target: unknown, dealt: unknown)
+attackEvent.OnClientEvent:Connect(function(attacker: unknown, target: unknown, dealt: unknown, shotEnd: unknown)
 	if not (typeof(attacker) == "Instance" and attacker:IsA("Model")) then
 		return
 	end
-	if not (typeof(target) == "Instance" and (target:IsA("Model") or target:IsA("BasePart"))) then
-		return
+	local hitTarget: Instance? = nil
+	if typeof(target) == "Instance" and (target:IsA("Model") or target:IsA("BasePart")) then
+		hitTarget = target
 	end
 	local from = startPoint(attacker)
-	local to = if from then endPoint(target, from) else nil
+	local to = if typeof(shotEnd) == "Vector3" then shotEnd elseif from and hitTarget then endPoint(hitTarget, from) else nil
 	if not (from and to and (to - from).Magnitude < 100) then
 		return
 	end
 	drawBolt(from, to)
-	flashTarget(target)
+	if not hitTarget then
+		return -- a miss: just the bolt
+	end
+	flashTarget(hitTarget)
 	if type(dealt) == "number" and dealt == dealt and dealt > 0 and dealt < 100000 then
 		if attacker == player.Character then
 			showNumber(to, dealt, DEALT_COLOR)
-		elseif target == player.Character then
+		elseif hitTarget == player.Character then
 			showNumber(to, dealt, TAKEN_COLOR)
 		end
 	end

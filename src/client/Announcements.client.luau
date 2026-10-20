@@ -1,10 +1,10 @@
 --!strict
--- Mobile Legends-style announcement banner, centred near the top of the screen:
--- a strip in the colour of the side that scored (khaki us, green zombies) that
--- fades out at the sides, with bold white text, e.g.
---   ZOMBIES LOST A CORE
---       ENEMY CORE DESTROYED
--- Banners queue, so two quick kills show one after another.
+-- Announcement banner near the top of the screen, in the game's UI design
+-- system (docs/11_UI_DESIGN.md): a surface pill with a white headline and a
+-- dimmer subline, e.g.
+--   Zombies lost a core
+--   Enemy core destroyed
+-- No team colours. Banners queue, so two quick events show one after another.
 -- Display only: the server decides when a structure is destroyed.
 
 local Players = game:GetService("Players")
@@ -12,31 +12,19 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
-local DEFENDERS = Config.Teams.Defenders
-local ZOMBIES = Config.Teams.Zombies
-
+local space = UiTheme.space
 local SHOW_SECONDS = 3
-local SLIDE_IN_SECONDS = 0.25
-local FADE_OUT_SECONDS = 0.4
-local START_WIDTH_SCALE = 0.6 -- the strip opens out sideways from the middle
-
--- Strip colors (the scoring team) and the brighter text tint for team names.
-local TEAM_STRIP_COLORS: { [string]: Color3 } = {
-	[DEFENDERS] = Color3.fromRGB(120, 105, 60),
-	[ZOMBIES] = Color3.fromRGB(50, 95, 35),
-}
-local TEAM_TEXT_COLORS: { [string]: Color3 } = {
-	[DEFENDERS] = Color3.fromRGB(240, 225, 170),
-	[ZOMBIES] = Color3.fromRGB(170, 235, 140),
-}
-local NEUTRAL_STRIP = Color3.fromRGB(40, 40, 48)
-local BOLD_FONT = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy)
-local MEDIUM_FONT = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
+local FADE_SECONDS = 0.25
+local DEFENDERS = Config.Teams.Defenders
 -- The map calls it Barracks; players know it as the inhibitor.
-local DISPLAY_NAMES: { [string]: string } = { Tower = "Tower", Barracks = "Inhibitor", Core = "Core" }
+local DISPLAY_NAMES: { [string]: string } = { Tower = "tower", Barracks = "inhibitor", Core = "core" }
+-- How each side is named on banners.
+local TEAM_LABELS: { [string]: string } = { [DEFENDERS] = "We", [Config.Teams.Zombies] = "Zombies" }
+local UNIT_LABELS: { [string]: string } = { [DEFENDERS] = "Our minions", [Config.Teams.Zombies] = "Zombies" }
 -- Players are always on our side; used until the server sets the attribute.
-local DEFAULT_TEAM = Config.Teams.Defenders
+local DEFAULT_TEAM = DEFENDERS
 
 local player = Players.LocalPlayer
 local destroyedEvent = ReplicatedStorage:WaitForChild("StructureDestroyed") :: RemoteEvent
@@ -46,107 +34,58 @@ local function localTeam(): string
 	return if type(team) == "string" then team else DEFAULT_TEAM
 end
 
--- How each side is named on banners.
-local TEAM_LABELS: { [string]: string } = { [DEFENDERS] = "WE", [ZOMBIES] = "ZOMBIES" }
-local UNIT_LABELS: { [string]: string } = { [DEFENDERS] = "OUR MINIONS", [ZOMBIES] = "ZOMBIES" }
-
-local function tinted(team: string, text: string): string
-	local color = TEAM_TEXT_COLORS[team] or Color3.new(1, 1, 1)
-	return `<font color="#{color:ToHex()}">{text}</font>`
-end
-
--- Banner ---------------------------------------------------------------------
+-- Banner ---------------------------------------------------------------------------
 
 local screen = Instance.new("ScreenGui")
 screen.Name = "Announcements"
 screen.ResetOnSpawn = false
 screen.DisplayOrder = 10
-screen.IgnoreGuiInset = false
 screen.Parent = player:WaitForChild("PlayerGui")
 
--- Holder keeps the position/size limits; the strip inside it animates.
-local holder = Instance.new("Frame")
-holder.Name = "Banner"
-holder.AnchorPoint = Vector2.new(0.5, 0.5)
-holder.Position = UDim2.fromScale(0.5, 0.17) -- upper middle: clear of thumbs and joystick
-holder.Size = UDim2.new(0.85, 0, 0, 64)
-holder.BackgroundTransparency = 1
-holder.Visible = false
-holder.Parent = screen
-local sizeLimit = Instance.new("UISizeConstraint")
-sizeLimit.MaxSize = Vector2.new(620, math.huge)
-sizeLimit.Parent = holder
+local banner = UiTheme.panel(screen, nil, UiTheme.RadiusLarge)
+banner.Name = "Banner"
+banner.AnchorPoint = Vector2.new(0.5, 0)
+banner.Position = UDim2.new(0.5, 0, 0, space(16))
+banner.Size = UDim2.fromOffset(0, 0)
+banner.AutomaticSize = Enum.AutomaticSize.XY
+banner.Visible = false
+UiTheme.applyScale(banner)
+local pad = Instance.new("UIPadding")
+pad.PaddingTop = UDim.new(0, space(3))
+pad.PaddingBottom = UDim.new(0, space(3))
+pad.PaddingLeft = UDim.new(0, space(6))
+pad.PaddingRight = UDim.new(0, space(6))
+pad.Parent = banner
+local layout = Instance.new("UIListLayout")
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+layout.Padding = UDim.new(0, 2)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = banner
 
-local strip = Instance.new("Frame")
-strip.Name = "Strip"
-strip.AnchorPoint = Vector2.new(0.5, 0.5)
-strip.Position = UDim2.fromScale(0.5, 0.5)
-strip.Size = UDim2.fromScale(1, 1)
-strip.BorderSizePixel = 0
-strip.Parent = holder
-
--- Solid in the middle, fading out to the sides, with a slight top-to-bottom shine.
-local fade = Instance.new("UIGradient")
-fade.Transparency = NumberSequence.new({
-	NumberSequenceKeypoint.new(0, 1),
-	NumberSequenceKeypoint.new(0.25, 0.1),
-	NumberSequenceKeypoint.new(0.75, 0.1),
-	NumberSequenceKeypoint.new(1, 1),
-})
-fade.Color = ColorSequence.new(Color3.new(1, 1, 1))
-fade.Parent = strip
-
--- A thin white line along the top and bottom edges, fading the same way.
-for _, y in { 0, 1 } do
-	local line = Instance.new("Frame")
-	line.AnchorPoint = Vector2.new(0.5, y)
-	line.Position = UDim2.fromScale(0.5, y)
-	line.Size = UDim2.new(1, 0, 0, 2)
-	line.BackgroundColor3 = Color3.new(1, 1, 1)
-	line.BackgroundTransparency = 0.2
-	line.BorderSizePixel = 0
-	line.Parent = strip
-	local lineFade = Instance.new("UIGradient")
-	lineFade.Transparency = fade.Transparency
-	lineFade.Parent = line
-end
-
-local function newLabel(name: string, top: number, height: number, font: Font, maxTextSize: number): TextLabel
-	local label = Instance.new("TextLabel")
-	label.Name = name
-	label.BackgroundTransparency = 1
-	label.Position = UDim2.fromScale(0.08, top)
-	label.Size = UDim2.fromScale(0.84, height)
-	label.FontFace = font
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.TextStrokeColor3 = Color3.new(0, 0, 0)
-	label.TextStrokeTransparency = 0.5
-	label.TextScaled = true
-	label.RichText = true
-	local limit = Instance.new("UITextSizeConstraint")
-	limit.MaxTextSize = maxTextSize
-	limit.Parent = label
-	label.Parent = strip
+local function line(order: number, size: number, weight: Font, strength: number): TextLabel
+	local label = UiTheme.text(banner, size, weight, strength)
+	label.LayoutOrder = order
+	label.Size = UDim2.fromOffset(0, size + 4)
+	label.AutomaticSize = Enum.AutomaticSize.X
+	label.TextTruncate = Enum.TextTruncate.None
+	label.TextXAlignment = Enum.TextXAlignment.Center
 	return label
 end
-local headline = newLabel("Headline", 0.12, 0.46, BOLD_FONT, 26)
-local subline = newLabel("Subline", 0.6, 0.28, MEDIUM_FONT, 16)
+local headline = line(1, 22, UiTheme.Font.Heavy, UiTheme.Strength.Value)
+local subline = line(2, UiTheme.TextSize.Body, UiTheme.Font.Medium, UiTheme.Strength.Label)
 
-local function fadeTo(alpha: number, seconds: number)
-	local info = TweenInfo.new(seconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	TweenService:Create(strip, info, { BackgroundTransparency = alpha }):Play()
-	for _, child in strip:GetChildren() do
-		if child:IsA("TextLabel") then
-			TweenService:Create(child, info, { TextTransparency = alpha, TextStrokeTransparency = 0.5 + 0.5 * alpha }):Play()
-		elseif child:IsA("Frame") then
-			TweenService:Create(child, info, { BackgroundTransparency = 0.2 + 0.8 * alpha }):Play()
-		end
-	end
+local function fadeTo(visible: boolean)
+	local info = TweenInfo.new(FADE_SECONDS, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	TweenService:Create(banner, info, {
+		BackgroundTransparency = if visible then UiTheme.SurfaceTransparency else 1,
+	}):Play()
+	TweenService:Create(headline, info, { TextTransparency = if visible then UiTheme.Strength.Value else 1 }):Play()
+	TweenService:Create(subline, info, { TextTransparency = if visible then UiTheme.Strength.Label else 1 }):Play()
 end
 
--- Queue ----------------------------------------------------------------------
+-- Queue ----------------------------------------------------------------------------
 
-type Message = { headline: string, subline: string, stripColor: Color3 }
+type Message = { headline: string, subline: string }
 local queue: { Message } = {}
 local showing = false
 
@@ -154,27 +93,20 @@ local function showNext()
 	local message = table.remove(queue, 1)
 	if not message then
 		showing = false
-		holder.Visible = false
+		banner.Visible = false
 		return
 	end
 	showing = true
 	headline.Text = message.headline
 	subline.Text = message.subline
-	strip.BackgroundColor3 = message.stripColor
-
-	fadeTo(1, 0)
-	strip.Size = UDim2.fromScale(START_WIDTH_SCALE, 1)
-	holder.Visible = true
-	fadeTo(0, SLIDE_IN_SECONDS)
-	TweenService:Create(
-		strip,
-		TweenInfo.new(SLIDE_IN_SECONDS, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{ Size = UDim2.fromScale(1, 1) }
-	):Play()
-
+	banner.BackgroundTransparency = 1
+	headline.TextTransparency = 1
+	subline.TextTransparency = 1
+	banner.Visible = true
+	fadeTo(true)
 	task.delay(SHOW_SECONDS, function()
-		fadeTo(1, FADE_OUT_SECONDS)
-		task.delay(FADE_OUT_SECONDS, showNext)
+		fadeTo(false)
+		task.delay(FADE_SECONDS, showNext)
 	end)
 end
 
@@ -185,24 +117,23 @@ local function announce(message: Message)
 	end
 end
 
--- Structure destroyed --------------------------------------------------------
+-- Structure destroyed --------------------------------------------------------------
 
 destroyedEvent.OnClientEvent:Connect(function(kind: unknown, team: unknown, killerTeam: unknown)
 	if type(kind) ~= "string" or type(team) ~= "string" or type(killerTeam) ~= "string" then
 		return
 	end
 	local name = DISPLAY_NAMES[kind]
-	if not (name and TEAM_STRIP_COLORS[team]) then
+	if not (name and TEAM_LABELS[team]) then
 		return
 	end
 	local ours = team == localTeam()
 	local detail = if kind == "Barracks" and UNIT_LABELS[killerTeam]
-		then `{tinted(killerTeam, UNIT_LABELS[killerTeam])} ARE NOW STRONGER`
-		elseif ours then `YOUR {string.upper(name)} HAS FALLEN`
-		else `ENEMY {string.upper(name)} DESTROYED`
+		then `{UNIT_LABELS[killerTeam]} are now stronger`
+		elseif ours then `Your {name} has fallen`
+		else `Enemy {name} destroyed`
 	announce({
-		headline = `{tinted(team, TEAM_LABELS[team] or string.upper(team))} LOST A {string.upper(name)}`,
+		headline = `{TEAM_LABELS[team]} lost a {name}`,
 		subline = detail,
-		stripColor = TEAM_STRIP_COLORS[killerTeam] or NEUTRAL_STRIP,
 	})
 end)

@@ -13,7 +13,7 @@ Open the place in Studio and connect the Rojo plugin (default port 34872). `buil
 - `src/shared` -> ReplicatedStorage.Shared (Config, Targeting).
 - `src/server` -> ServerScriptService.Server (services and server scripts).
 - `src/client` -> StarterPlayer.StarterPlayerScripts.Client.
-- `src/map` -> Workspace.Arena (graybox map as `.model.json`).
+- `src/map` -> Workspace.Arena (graybox map as `.model.json`). `Nature.model.json` (trees, rocks) is generated: edit `tools/gen_nature.py`, then `python tools/gen_nature.py`.
 - `assets` -> ServerStorage.Assets (owner-saved models such as `TowerModel.rbxmx`).
 - StarterPlayer properties: shift lock off, first-person camera, jump power 50 (Roblox default, set explicitly so a synced place that had 0 is reset).
 - Remotes are created at runtime by the server scripts that own them.
@@ -21,4 +21,6 @@ Open the place in Studio and connect the Rojo plugin (default port 34872). `buil
 The original starter-pack scaffold (bootstraps, Protocol, Smoke test) was never imported (owner decision 2026-10-12); files are written one at a time.
 
 ## Studio work outside source sync
+**Terrain (hills):** Rojo cannot sync terrain. To see the hills in edit view, open View > Command Bar while not playing and run `require(game.ServerScriptService.Server.Landscape).buildTerrain()`, then save the place. Re-run it after hill settings change. The server also builds the same terrain at every start, so a place without this step still plays correctly.
+
 Server capacity (planned 5), R15, supported devices (PC first), Studio API access for DataStores (owner choice), ownership and audience are Studio/Dashboard settings not held in this file; record them in the release checklist. When the place ID is known, consider `servePlaceIds` to prevent syncing into an unrelated place.

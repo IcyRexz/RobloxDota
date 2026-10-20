@@ -21,7 +21,11 @@
           0.55,
           0.3
         ],
-        "Material": "SmoothPlastic"
+        "Material": "SmoothPlastic",
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Transparency": 1
       }
     },
     {

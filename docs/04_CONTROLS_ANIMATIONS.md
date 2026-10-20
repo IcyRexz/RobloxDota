@@ -5,11 +5,12 @@ Mouse and keyboard is the launch input. The mobile port is deferred (T26) and th
 
 Working assumptions, to confirm with the owner as each task lands:
 - **Move:** WASD (Roblox default), relative to the camera. Space jumps (Roblox default power 50, owner 2026-10-20). No climb or swim.
+- **Character Menu:** U opens/closes it (or click the gold level badge): stats on the left, upgrade cards on the right when a pick is waiting; click a card or press 1/2/3.
 - **Camera:** first person (Roblox `CameraMode = LockFirstPerson`, owner decision 2026-10-20): mouse turns the view, centre crosshair. Shift lock (Roblox's built-in third-person mouse lock) stays off; first person locks the mouse anyway.
-- **Fire:** left mouse button, hold to repeat at the weapon's rate. Aim model (mouse-aimed vs auto-target) **OPEN**; the prototype's auto-target path with click/Tab target lock exists today.
-- **Abilities:** keys per class (**OPEN**, T18).
+- **Fire:** left mouse button, hold to repeat at the weapon's rate. Shoots where the crosshair points (owner 2026-10-20); out of range = miss, no auto-walk. Aim assist: put the crosshair on or right next to an enemy in range and it gets a red outline and your shots go straight at it.
+- **Abilities:** keys 1, 2, 3 (ultimate) per hero; abilities **OPEN** (T18).
 - **Build/repair:** interact with a build node during the build phase to open its menu (key and UI **OPEN**, T12).
-- **Hub:** UI for class, loadout and queue (T17).
+- **Hub:** UI for hero pick, loadout and queue (T17).
 
 Input rules carried from the prototype: all input routes call one client intent function per action; held actions stop on death, results, focus loss and character removal; disabled actions never queue; the server decides every hit.
 

@@ -7,11 +7,14 @@
 --    Roblox's built-in health regeneration is removed.
 --  * Death: Roblox respawns the player after Config.Hero.RespawnTime seconds
 --    with full health. Spawn protection and death rules come in T08.
+--  * Max health and walk speed include the player's level-up picks (HeroProgress),
+--    so upgrades survive respawning.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local HeroProgress = require(script.Parent.HeroProgress)
 
 local HeroConfig = Config.Hero
 
@@ -50,12 +53,13 @@ local function setupHero(player: Player, character: Model)
 
 	character:SetAttribute("Kind", "Hero")
 	character:SetAttribute("HeroName", HeroConfig.Name)
-	character:SetAttribute("MaxHealth", HeroConfig.MaxHealth)
-	character:SetAttribute("Health", HeroConfig.MaxHealth)
+	local maxHealth = HeroProgress.maxHealth(player)
+	character:SetAttribute("MaxHealth", maxHealth)
+	character:SetAttribute("Health", maxHealth)
 
-	humanoid.MaxHealth = HeroConfig.MaxHealth
-	humanoid.Health = HeroConfig.MaxHealth
-	humanoid.WalkSpeed = HeroConfig.WalkSpeed
+	humanoid.MaxHealth = maxHealth
+	humanoid.Health = maxHealth
+	humanoid.WalkSpeed = HeroProgress.walkSpeed(player)
 	-- Our own overhead bar replaces Roblox's name and health display.
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
