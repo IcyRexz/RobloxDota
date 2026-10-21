@@ -2,7 +2,7 @@
   "className": "Model",
   "children": [
     {
-      "name": "LeftZombieCore",
+      "name": "ZombieCore",
       "className": "Part",
       "properties": {
         "Anchored": true,
@@ -12,9 +12,9 @@
           12
         ],
         "Position": [
-          150,
+          220,
           7,
-          -70
+          0
         ],
         "Color": [
           0.28,
@@ -24,7 +24,7 @@
         "Material": "SmoothPlastic"
       },
       "attributes": {
-        "EntityId": "LeftZombieCore",
+        "EntityId": "ZombieCore",
         "Team": "Zombies",
         "Kind": "Core",
         "MaxHealth": 1200,
@@ -32,7 +32,7 @@
       }
     },
     {
-      "name": "LeftZombieSpawn",
+      "name": "ZombieSpawn",
       "className": "Part",
       "properties": {
         "Anchored": true,
@@ -46,71 +46,15 @@
           4
         ],
         "Position": [
-          136,
+          220,
           0.5,
-          -70
+          0
         ]
       },
       "attributes": {
         "Team": "Zombies",
         "Kind": "MinionSpawn",
-        "Source": "LeftZombieCore"
-      }
-    },
-    {
-      "name": "RightZombieCore",
-      "className": "Part",
-      "properties": {
-        "Anchored": true,
-        "Size": [
-          12,
-          14,
-          12
-        ],
-        "Position": [
-          150,
-          7,
-          70
-        ],
-        "Color": [
-          0.28,
-          0.38,
-          0.2
-        ],
-        "Material": "SmoothPlastic"
-      },
-      "attributes": {
-        "EntityId": "RightZombieCore",
-        "Team": "Zombies",
-        "Kind": "Core",
-        "MaxHealth": 1200,
-        "Health": 1200
-      }
-    },
-    {
-      "name": "RightZombieSpawn",
-      "className": "Part",
-      "properties": {
-        "Anchored": true,
-        "CanCollide": false,
-        "CanQuery": false,
-        "CanTouch": false,
-        "Transparency": 1,
-        "Size": [
-          4,
-          1,
-          4
-        ],
-        "Position": [
-          136,
-          0.5,
-          70
-        ]
-      },
-      "attributes": {
-        "Team": "Zombies",
-        "Kind": "MinionSpawn",
-        "Source": "RightZombieCore"
+        "Source": "ZombieCore"
       }
     }
   ]

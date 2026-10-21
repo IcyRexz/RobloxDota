@@ -8,8 +8,8 @@ local Workspace = game:GetService("Workspace")
 
 local Targeting = {}
 
-Targeting.TargetKinds = table.freeze({ Hero = true, Minion = true, Tower = true, Barracks = true, Core = true })
-Targeting.StructureKinds = table.freeze({ Tower = true, Barracks = true, Core = true })
+Targeting.TargetKinds = table.freeze({ Hero = true, Minion = true, Tower = true, Barracks = true, Core = true, Nest = true })
+Targeting.StructureKinds = table.freeze({ Tower = true, Barracks = true, Core = true, Nest = true })
 
 function Targeting.planarDistance(a: Vector3, b: Vector3): number
 	return Vector3.new(a.X - b.X, 0, a.Z - b.Z).Magnitude

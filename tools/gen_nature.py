@@ -1,4 +1,4 @@
-"""Writes src/map/Nature.model.json: the battlefield's placeholder trees and rocks.
+"""Writes src/map/Nature.model.json: the battlefield's trees and rocks.
 
 They are plain map parts (like the towers and spawn pads), so Rojo shows them in
 Studio's edit view. Each one stands on the hills made by src/server/Landscape.luau:
@@ -12,18 +12,33 @@ Layout (owner request 2026-10-20):
     those, for frame rate); the west edge is the base's back fence, left open
   * 14 trees and 16 rocks scattered between the base and the belt, at least
     24 studs apart (never corridors), kept away from the base and zombie areas
+  * 2026-10-21 (owner): 14 more scattered trees (placed after the first ones so
+    their layout stays), then 24 of the owner's rock model littered between,
+    at least 12 studs from anything already placed
 Trunks and rocks collide (units walk around them); tree canopies do not.
 The minimap and swarm pathing find them by their Kind attribute (Tree / Rock).
+
+Tree art (owner 2026-10-21): each tree is the owner's pine model
+(assets/ModelTree1.rbxmx or ModelTree2.rbxmx), cloned onto the tree at server
+start by src/server/NatureArt.server.luau. This file only holds the plain
+parts: an invisible-in-game trunk block (collision) and a canopy block sized to
+the pine's leaves (Kind = Tree; blocks line of sight, drawn on the minimap,
+see-through green in Studio's edit view). The canopy carries Art (model name),
+ArtScale, ArtYaw (degrees) and Ground (height of the ground under the trunk).
+Model rocks (assets/ModelRock1.rbxmx) work the same way with a single block:
+Kind = Rock, collides, sized to the rock and turned with it.
 """
 
 import json
 import math
 import random
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MAP = ROOT / "src" / "map"
 OUT = MAP / "Nature.model.json"
+ASSETS = ROOT / "assets"
 
 # --- Copy of Landscape.luau (keep in step) -------------------------------------
 SEED = 20261020
@@ -45,10 +60,42 @@ BELT_SPACING = 6
 SCATTER_TREES = 14
 SCATTER_ROCKS = 16
 SCATTER_SPACING = 24
+EXTRA_TREES = 14
+MODEL_ROCKS = 24
+MODEL_ROCK_SPACING = 12
+MODEL_ROCK_SCALE = (0.7, 1.6)  # a scale-1 rock is about 5 wide, 2.5 tall
+MODEL_ROCK_SINK = 0.1  # share of its height below the ground (owner 2026-10-21: was 0.25, too buried)
 SCATTER_KEEP_OUT = 26
 TRUNK_COLOR = [110 / 255, 78 / 255, 50 / 255]
 LEAF_COLOR = [46 / 255, 140 / 255, 52 / 255]
+TREE_ART = ["ModelTree1", "ModelTree2"]
+ROCK_ART = "ModelRock1"
+TREE_HEIGHT = 18  # studs at size 1 (a placeholder tree was about 12-14)
+CANOPY_SHARE = 0.75  # canopy block width / leaf mesh width (a pine is a cone)
 ROCK_COLOR = [128 / 255, 128 / 255, 134 / 255]
+
+
+def load_art(name):
+    """Height, leaf width and leaf height/centre (above the model's bottom) of a tree model."""
+    parts = {}
+    for item in ET.parse(ASSETS / f"{name}.rbxmx").getroot().iter("Item"):
+        if item.get("class") != "MeshPart":
+            continue
+        props = item.find("Properties")
+        cf, size = props.find("CoordinateFrame[@name='CFrame']"), props.find("Vector3[@name='size']")
+        parts[props.find("string[@name='Name']").text] = ([float(cf.find(k).text) for k in "XYZ"], [float(size.find(k).text) for k in "XYZ"])
+    bottom = min(p[1] - s[1] / 2 for p, s in parts.values())
+    top = max(p[1] + s[1] / 2 for p, s in parts.values())
+    art = {"height": top - bottom,
+           "width": max(p[0] + s[0] / 2 for p, s in parts.values()) - min(p[0] - s[0] / 2 for p, s in parts.values()),
+           "depth": max(p[2] + s[2] / 2 for p, s in parts.values()) - min(p[2] - s[2] / 2 for p, s in parts.values())}
+    if "Leaf" in parts:
+        (lp, ls) = parts["Leaf"]
+        art.update(leaf_width=max(ls[0], ls[2]), leaf_height=ls[1], leaf_centre=lp[1] - bottom)
+    return art
+
+
+ART = {name: load_art(name) for name in TREE_ART + [ROCK_ART]}
 
 
 def load_parts(name):
@@ -136,14 +183,14 @@ def height_at(x, z):
 
 # --- Parts -----------------------------------------------------------------------
 parts = []
-counts = {"Tree": 0, "Rock": 0}
+counts = {"Tree": 0, "Rock": 0, "ModelRock": 0}
 
 
 def r(v):
     return round(v, 3)
 
 
-def add_part(name, size, position, color, rotation=None, shape=None, collide=True, shadow=True, kind=None):
+def add_part(name, size, position, color, rotation=None, shape=None, collide=True, shadow=True, kind=None, transparency=0, extra=None):
     props = {
         "Anchored": True,
         "CanTouch": False,
@@ -163,9 +210,11 @@ def add_part(name, size, position, color, rotation=None, shape=None, collide=Tru
         props["CanCollide"] = False
     if not shadow:
         props["CastShadow"] = False
+    if transparency:
+        props["Transparency"] = transparency
     part = {"name": name, "className": "Part", "properties": props}
     if kind:
-        part["attributes"] = {"Kind": kind}
+        part["attributes"] = {"Kind": kind, **(extra or {})}
     parts.append(part)
 
 
@@ -182,12 +231,18 @@ def angles(rx, ry, rz):
 def add_tree(rng, x, z, size, shadows):
     counts["Tree"] += 1
     n = counts["Tree"]
-    y = height_at(x, z) - 1  # sunk a little so slopes never show a gap
-    trunk_height = 6 * size
-    add_part(f"Tree{n}Trunk", (1.6 * size, trunk_height, 1.6 * size), (x, y + trunk_height / 2, z), TRUNK_COLOR, shadow=False)
-    canopy = 8 * size * rng.uniform(0.85, 1.15)
-    add_part(f"Tree{n}", (canopy, canopy, canopy), (x, y + trunk_height + canopy * 0.3, z), LEAF_COLOR,
-             shape="Ball", collide=False, shadow=shadows, kind="Tree")
+    # Look comes from its own generator so the layout (rng) stays as it was.
+    look = random.Random(SEED + n)
+    name = look.choice(TREE_ART)
+    art = ART[name]
+    ground = height_at(x, z) - 0.5  # sunk a little so slopes never show a gap
+    scale = TREE_HEIGHT * size * rng.uniform(0.85, 1.15) / art["height"]
+    trunk_height = art["height"] * scale * 0.6
+    add_part(f"Tree{n}Trunk", (1.6 * size, trunk_height, 1.6 * size), (x, ground - 0.5 + trunk_height / 2, z), TRUNK_COLOR, shadow=False)
+    width = art["leaf_width"] * scale * CANOPY_SHARE
+    add_part(f"Tree{n}", (width, art["leaf_height"] * scale, width), (x, ground + art["leaf_centre"] * scale, z), LEAF_COLOR,
+             collide=False, shadow=shadows, kind="Tree", transparency=0.6,
+             extra={"Art": name, "ArtScale": round(scale, 4), "ArtYaw": round(look.uniform(0, 360), 1), "Ground": r(ground)})
 
 
 def add_rock(rng, x, z):
@@ -202,6 +257,23 @@ def add_rock(rng, x, z):
         ly = height_at(x + ox, z + oz)
         add_part(f"Rock{n}" if i == 1 else f"Rock{n}Piece{i}", size, (x + ox, min(y, ly) + size[1] * 0.3, z + oz),
                  ROCK_COLOR, rotation=rot, kind="Rock" if i == 1 else None)
+
+
+def add_model_rock(x, z):
+    counts["ModelRock"] += 1
+    n = counts["ModelRock"]
+    look = random.Random(SEED * 2 + n)
+    art = ART[ROCK_ART]
+    scale = look.uniform(*MODEL_ROCK_SCALE)
+    yaw = look.uniform(0, 360)
+    height = art["height"] * scale
+    ground = height_at(x, z) - height * MODEL_ROCK_SINK  # partly sunk, so slopes never show a gap
+    # Slightly smaller than the mesh's box, so units brush its sides rather than
+    # stop short of them. Turned with the mesh.
+    size = (art["width"] * scale * 0.85, height, art["depth"] * scale * 0.85)
+    add_part(f"ModelRock{n}", size, (x, ground + height / 2, z), ROCK_COLOR, rotation=angles(0, math.radians(yaw), 0),
+             kind="Rock", transparency=0.6,
+             extra={"Art": ROCK_ART, "ArtScale": round(scale, 4), "ArtYaw": round(yaw, 1), "Ground": r(ground)})
 
 
 def near_any(x, z, boxes, distance):
@@ -231,13 +303,13 @@ def build():
 
     placed = []
 
-    def try_place():
+    def try_place(spacing=SCATTER_SPACING):
         for _ in range(60):
             x = rng.uniform(BASE_BOX[1] + SCATTER_KEEP_OUT, MAX_X - BELT_DEPTH - 10)
             z = rng.uniform(MIN_Z + BELT_DEPTH + 10, MAX_Z - BELT_DEPTH - 10)
             if near_any(x, z, ZOMBIE_BOXES, SCATTER_KEEP_OUT):
                 continue
-            if any(math.dist((x, z), p) < SCATTER_SPACING for p in placed):
+            if any(math.dist((x, z), p) < spacing for p in placed):
                 continue
             placed.append((x, z))
             return x, z
@@ -251,6 +323,14 @@ def build():
         p = try_place()
         if p:
             add_rock(rng, p[0], p[1])
+    for _ in range(EXTRA_TREES):
+        p = try_place()
+        if p:
+            add_tree(rng, p[0], p[1], rng.uniform(0.9, 1.2), True)
+    for _ in range(MODEL_ROCKS):
+        p = try_place(MODEL_ROCK_SPACING)
+        if p:
+            add_model_rock(p[0], p[1])
 
 
 build()
@@ -264,5 +344,5 @@ model = {
 }
 OUT.write_text(json.dumps(model, indent=1) + "\n", encoding="utf-8", newline="\n")
 heights = [height_at(x, z) for x in range(int(MIN_X), int(MAX_X), 4) for z in range(int(MIN_Z), int(MAX_Z), 4)]
-print(f"Wrote {OUT.relative_to(ROOT)}: {counts['Tree']} trees, {counts['Rock']} rocks, {len(parts)} parts; "
+print(f"Wrote {OUT.relative_to(ROOT)}: {counts['Tree']} trees, {counts['Rock']} rocks, {counts['ModelRock']} model rocks, {len(parts)} parts; "
       f"ground height {min(heights):.2f} .. {max(heights):.2f} studs")

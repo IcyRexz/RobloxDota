@@ -1,6 +1,6 @@
 # Art brief: trees and rocks (for Claude Design)
 
-Status: brief written 2026-10-21; no art made yet. The placeholders (green ball trees, grey block rocks) are generated into `src/map/Nature.model.json` by `tools/gen_nature.py`. Finished meshes would replace them (saved by the owner as `.rbxmx` under `assets/`, like `TowerModel` and `FenceModel`).
+Status: brief written 2026-10-21. Trees done the same day without Claude Design: the owner picked two low-poly pines from a free Toolbox pack (`assets/ModelTree1.rbxmx`, `assets/ModelTree2.rbxmx`); `tools/gen_nature.py` places plain collision/canopy blocks sized to them in `src/map/Nature.model.json` and `src/server/NatureArt.server.luau` clones the pines onto them in game. The grey block rocks stay (owner 2026-10-21: they look fine); 24 copies of the owner's Toolbox rock (`assets/ModelRock1.rbxmx`) are littered between them, and 14 more trees were scattered over the battlefield. Trees are now about 15-29 studs tall (the placeholder sizes below are history).
 
 ## Facts about the game (data to give the designer)
 - **Engine:** Roblox. Models import as MeshParts (FBX/OBJ). Roblox allows up to 20,000 triangles per mesh, but we want far fewer.
@@ -34,3 +34,6 @@ Status: brief written 2026-10-21; no art made yet. The placeholders (green ball 
 2. **Trees (10 total):** 3 broadleaf oaks, 3 pines (good for the dense edge forest), 2 gnarled or dead trees (the zombie touch), and 2 saplings or bushes for variety.
 3. **Rocks (8 total):** 3 boulders, 2 flat slabs, 2 small multi-rock clusters, and 1 mossy boulder.
 4. For each: front and side views, a top silhouette, the triangle count and its size in studs.
+
+## Low-poly prompt (owner 2026-10-21)
+The owner switched the first art pass to a small **low-poly** set: 3 trees (broadleaf, pine, gnarled dead) and 2 rocks (boulder, slab cluster), delivered as OBJ + MTL files (separate Trunk / Canopy objects) that import into Studio with File > Import 3D. The prompt given to Claude Design is in the chat log of that date; budgets: trees 150–400 triangles, rocks 40–150, flat shading, colours from the palette above (foliage kept away from the zombie green). Imported models go under `assets/` as `.rbxmx`, then `tools/gen_nature.py` placement is switched from the placeholder parts to clones of them.

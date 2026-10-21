@@ -47,6 +47,7 @@ UiTheme.RaisedHoverTransparency = 0.9 -- ...10% (also the "on" ability slot)
 UiTheme.DisabledTransparency = 0.96 -- ...4% (locked slots)
 UiTheme.Radius = 8 -- HUD pieces, slots, cards
 UiTheme.RadiusLarge = 12 -- whole menus
+UiTheme.ScrollBar = 3 -- scroll bar thickness (info area)
 UiTheme.Scrim = Color3.new(0, 0, 0) -- dims the game behind a menu
 UiTheme.ScrimTransparency = 0.5
 
@@ -60,6 +61,9 @@ UiTheme.Strength = table.freeze({
 })
 UiTheme.Gold = Color3.fromRGB(245, 196, 81)
 UiTheme.OnGold = Color3.fromRGB(26, 20, 8) -- text on a gold fill
+-- Orange (owner 2026-10-21): only for the "Improves: ..." line on mastery and
+-- upgrade tiles, so what a pick affects stands out from its gold state.
+UiTheme.Improves = Color3.fromRGB(255, 150, 60)
 
 -- 4. Meaning -------------------------------------------------------------------------
 UiTheme.Ally = Color3.fromRGB(94, 211, 126) -- friendly health
@@ -69,7 +73,7 @@ UiTheme.Enemy = Color3.fromRGB(229, 83, 75) -- enemy health, damage you take
 UiTheme.Bar = table.freeze({
 	Health = 8,
 	Xp = 3,
-	Structure = 5,
+	Structure = 18, -- owner 2026-10-21: bigger than the MOBA-era 14, with the numbers inside
 	Unit = 4,
 })
 

@@ -32,7 +32,7 @@ local FENCE_COLOR = Color3.fromRGB(196, 150, 100)
 local TREE_COLOR = Color3.fromRGB(34, 110, 40)
 local ROCK_COLOR = Color3.fromRGB(140, 140, 146)
 local PROP_COLORS: { [string]: Color3 } = { Fence = FENCE_COLOR, Tree = TREE_COLOR, Rock = ROCK_COLOR }
-local STRUCTURE_SIZES: { [string]: number } = { Tower = 9, Barracks = 8, Core = 12 }
+local STRUCTURE_SIZES: { [string]: number } = { Tower = 9, Barracks = 8, Core = 12, Nest = 10 }
 local UNIT_DOT = 4
 local HERO_DOT = 7
 -- Players are always on our side; used until the server sets the attribute.
@@ -154,6 +154,9 @@ end
 for _, item in arena:GetDescendants() do
 	addStructure(item)
 end
+-- Structures added mid-match (zombie nests). Attributes are set before the
+-- server parents the part, so they are there when it arrives.
+arena.ChildAdded:Connect(addStructure)
 
 -- Unit and hero dots: a reused pool, repositioned on a short timer.
 local dotPool: { Frame } = {}

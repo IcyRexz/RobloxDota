@@ -4,13 +4,16 @@
 --    UI design system: docs/11_UI_DESIGN.md), shown within
 --    Config.Display.HealthBarRange of your hero
 --  * the archer's bow-draw pose and the flying arrow
---  * the zombie's hand swipe (arm rears up, claws down, body lunges in)
--- Display only. The server owns minion health and decides every hit; the arrow
--- and the swipe just show a hit the server has already scheduled.
+--  * the zombie's hand swipe (arm rears up, claws down, body lunges in); the
+--    Brute instead smashes down with both hands
+--  * the spitter's acid blob (lobbed onto a spot) and the green puddle it leaves
+-- Display only. The server owns minion health and decides every hit; the arrow,
+-- the swipe and the acid just show a hit the server has already scheduled.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -42,9 +45,32 @@ local LEAN_BACK_POSE = CFrame.Angles(math.rad(10), 0, 0)
 local LUNGE_POSE = CFrame.Angles(math.rad(-25), 0, 0)
 local SWIPE_RAISE_SHARE = 0.7 -- part of the hit delay spent rearing up; the rest is the strike
 local SWIPE_RECOVER_TIME = 0.3
+-- Brute smash (owner 2026-10-22): both arms swing up overhead, then slam down
+-- in front, using the owner's swing pattern: every frame, after the walk/idle
+-- animation, a rotation is added to each shoulder's Transform
+-- (JointPose.addRotation), so the animation cannot hide it. Angles and timing
+-- in Config.Minion.BruteSmashLook; the hit delay comes from the server.
+
+local ACID_COLOR = Color3.fromRGB(50, 140, 35) -- a world effect; owner 2026-10-22: darker acid green (same as the spitter's mouth, Minions.server)
+local ACID_ARC = 0.25 -- peak height of the blob's lob, as a share of its length
+local ACID_MAX_RADIUS = 20 -- ignore acid messages with a bigger blast
+-- Acid puddle (owner 2026-10-22): splats out to the blast size, stays, then fades.
+local PUDDLE_SPLAT_TIME = 0.15
+local PUDDLE_STAY = 2 -- seconds at full strength (owner 2026-10-22: was 4)
+local PUDDLE_FADE = 1 -- seconds to fade away (was 2)
+local PUDDLE_TRANSPARENCY = 0.25
+local PUDDLE_THICKNESS = 0.05 -- studs (was 0.15)
+-- Not round (owner 2026-10-22): a main splat plus a few smaller blots around
+-- its edge, overlapping into a puddle outline. Shares of the blast radius.
+local PUDDLE_MAIN = 0.7 -- main splat radius
+local PUDDLE_BLOTS = 4 -- smaller blots around it
+local PUDDLE_BLOT_SIZE = { 0.3, 0.5 } -- blot radius range
+local PUDDLE_BLOT_REACH = { 0.35, 0.6 } -- how far from the centre each blot sits
+local PUDDLE_PROBE = 20 -- studs above and below the landing point searched for the ground
 
 local player = Players.LocalPlayer
 local minionFolder = Workspace:WaitForChild("Minions")
+local acidEvent = ReplicatedStorage:WaitForChild("ZombieAcid") :: RemoteEvent
 local shotEvent = ReplicatedStorage:WaitForChild("MinionShot") :: RemoteEvent
 local swingEvent = ReplicatedStorage:WaitForChild("MinionSwing") :: RemoteEvent
 
@@ -268,12 +294,16 @@ end)
 -- Zombie swipes --------------------------------------------------------------
 
 local swipeCounts: { [Model]: number } = {}
+-- Brute smashes in progress (see playBruteSmash).
+type ArmSwing = { shoulders: { Instance }, started: number, raiseTime: number, slamTime: number }
+local armSwings: { [Model]: ArmSwing } = {}
 local loggedFirstSwipe = false
 
 -- A removed minion's bar, poses and swipe count are forgotten (one cleanup for all).
 minionFolder.ChildRemoved:Connect(function(child)
 	if child:IsA("Model") then
 		bars[child] = nil
+		armSwings[child] = nil
 		posedJoints[child] = nil
 		swipeCounts[child] = nil
 	end
@@ -322,6 +352,60 @@ local function playSwipe(zombie: Model, hitDelay: number)
 	end)
 end
 
+-- Smooth 0 -> 1 curve (slow start, slow finish).
+local function ease(x: number): number
+	return (1 - math.cos(math.clamp(x, 0, 1) * math.pi)) / 2
+end
+
+
+local function playBruteSmash(brute: Model, hitDelay: number)
+	local shoulders: { Instance } = {}
+	for _, name in { "LeftShoulder", "RightShoulder" } do
+		for _, shoulder in JointPose.animated(brute, name) do
+			table.insert(shoulders, shoulder)
+		end
+	end
+	local raiseTime = hitDelay * Config.Minion.BruteSmashLook.raiseShare
+	armSwings[brute] = {
+		shoulders = shoulders,
+		started = os.clock(),
+		raiseTime = raiseTime,
+		slamTime = hitDelay - raiseTime,
+	}
+end
+
+-- The arms' extra angle (degrees) at time t into a smash, or nil once it is over.
+local function smashAngle(swing: ArmSwing, t: number): number?
+	local look = Config.Minion.BruteSmashLook
+	local hitAt = swing.raiseTime + swing.slamTime
+	if t < swing.raiseTime then
+		return look.raiseAngle * ease(t / swing.raiseTime)
+	elseif t < hitAt then
+		return look.raiseAngle + (look.slamAngle - look.raiseAngle) * ease((t - swing.raiseTime) / swing.slamTime)
+	elseif t < hitAt + look.recoverTime then
+		return look.slamAngle * (1 - ease((t - hitAt) / look.recoverTime))
+	end
+	return nil
+end
+
+RunService.PreSimulation:Connect(function()
+	local now = os.clock()
+	for brute, swing in armSwings do
+		local t = now - swing.started
+		local angle = smashAngle(swing, t)
+		if not angle or brute.Parent ~= minionFolder then
+			armSwings[brute] = nil
+		else
+			local rotation = CFrame.Angles(math.rad(angle), 0, 0)
+			for _, shoulder in swing.shoulders do
+				if shoulder.Parent then
+					JointPose.addRotation(shoulder, rotation)
+				end
+			end
+		end
+	end
+end)
+
 swingEvent.OnClientEvent:Connect(function(zombie: unknown, hitDelay: unknown)
 	if not (typeof(zombie) == "Instance" and zombie:IsA("Model") and zombie.Parent == minionFolder) then
 		return
@@ -329,5 +413,128 @@ swingEvent.OnClientEvent:Connect(function(zombie: unknown, hitDelay: unknown)
 	if not (type(hitDelay) == "number" and hitDelay == hitDelay and hitDelay > 0 and hitDelay <= MAX_SWING_TIME) then
 		return
 	end
-	playSwipe(zombie, hitDelay)
+	if zombie:GetAttribute("MinionType") == "Brute" then
+		playBruteSmash(zombie, hitDelay)
+	else
+		playSwipe(zombie, hitDelay)
+	end
+end)
+
+-- Spitter acid ----------------------------------------------------------------
+
+-- A short-lived, non-colliding world part (the blob and its puddle).
+local function effectPart(name: string, size: Vector3): Part
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Shape = Enum.PartType.Ball
+	part.Size = size
+	part.Color = ACID_COLOR
+	part.Material = Enum.Material.Neon
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CastShadow = false
+	return part
+end
+
+-- The puddle the blob leaves: a flat green disc as wide as the blast, which
+-- splats out, stays a while and fades. Display only (the damage was dealt
+-- once, when the blob landed).
+-- The real ground under a point: the server's landing height comes from the
+-- terrain formula, but the terrain is built from voxels, so its surface can be
+-- higher and would hide the puddle. Only the terrain and the base floor count
+-- (not trees, rocks, units or players).
+local function groundUnder(point: Vector3): Vector3
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	local ground: { Instance } = { Workspace.Terrain }
+	local arena = Workspace:FindFirstChild("Arena")
+	local floor = arena and arena:FindFirstChild("BaseFloor", true)
+	if floor then
+		table.insert(ground, floor)
+	end
+	params.FilterDescendantsInstances = ground
+	local hit = Workspace:Raycast(point + Vector3.new(0, PUDDLE_PROBE, 0), Vector3.new(0, -PUDDLE_PROBE * 2, 0), params)
+	return if hit then hit.Position else point
+end
+
+-- One flat disc of the puddle on the ground at `centre`, splatting out to
+-- `size` radius, then fading after PUDDLE_STAY.
+local function puddleBlot(centre: Vector3, size: number, height: number)
+	local blot = effectPart("AcidPuddle", Vector3.new(PUDDLE_THICKNESS, 0.5, 0.5))
+	blot.Shape = Enum.PartType.Cylinder
+	blot.Material = Enum.Material.SmoothPlastic -- flat, not glowing, so it reads as a darker puddle
+	blot.Transparency = PUDDLE_TRANSPARENCY
+	-- Each blot a hair higher than the last so overlaps do not flicker.
+	blot.CFrame = CFrame.new(groundUnder(centre) + Vector3.new(0, 0.05 + height, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	blot.Parent = Workspace
+	TweenService:Create(blot, TweenInfo.new(PUDDLE_SPLAT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(PUDDLE_THICKNESS, size * 2, size * 2),
+	}):Play()
+	local fade = TweenService:Create(blot, TweenInfo.new(PUDDLE_FADE, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, PUDDLE_STAY), {
+		Transparency = 1,
+	})
+	fade.Completed:Connect(function()
+		blot:Destroy()
+	end)
+	fade:Play()
+end
+
+local function between(range: { number }): number
+	return range[1] + math.random() * (range[2] - range[1])
+end
+
+local function showPuddle(landing: Vector3, radius: number)
+	puddleBlot(landing, radius * PUDDLE_MAIN, 0)
+	local turn = math.random() * 2 * math.pi
+	for index = 1, PUDDLE_BLOTS do
+		-- Spread round the edge, each at a slightly random angle.
+		local angle = turn + (index + math.random() * 0.6) / PUDDLE_BLOTS * 2 * math.pi
+		local reach = radius * between(PUDDLE_BLOT_REACH)
+		local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * reach
+		puddleBlot(landing + offset, radius * between(PUDDLE_BLOT_SIZE), index * 0.005)
+	end
+end
+
+-- Lobs a blob from `from` to `landing` in an arc over `flightTime`, then it
+-- leaves a puddle there.
+local function flyAcid(from: Vector3, landing: Vector3, flightTime: number, radius: number)
+	local blob = effectPart("AcidBlob", Vector3.new(0.8, 0.8, 0.8))
+	blob.CFrame = CFrame.new(from)
+	blob.Parent = Workspace
+	local height = (landing - from).Magnitude * ACID_ARC
+	local elapsed = 0
+	local connection: RBXScriptConnection
+	connection = RunService.RenderStepped:Connect(function(deltaTime)
+		elapsed += deltaTime
+		local alpha = math.min(elapsed / math.max(flightTime, 0.01), 1)
+		blob.CFrame = CFrame.new(from:Lerp(landing, alpha) + Vector3.new(0, height * 4 * alpha * (1 - alpha), 0))
+		if alpha >= 1 then
+			connection:Disconnect()
+			blob:Destroy()
+			showPuddle(landing, radius)
+		end
+	end)
+end
+
+local function isFinitePoint(value: unknown): boolean
+	if typeof(value) ~= "Vector3" then
+		return false
+	end
+	local v = value :: Vector3
+	return v.X == v.X and v.Y == v.Y and v.Z == v.Z and v.Magnitude < 1e5
+end
+
+acidEvent.OnClientEvent:Connect(function(spitter: unknown, from: unknown, landing: unknown, flightTime: unknown, radius: unknown)
+	if not (typeof(spitter) == "Instance" and spitter:IsA("Model")) then
+		return
+	end
+	if not (isFinitePoint(from) and isFinitePoint(landing) and isShotTime(flightTime)) then
+		return
+	end
+	if not (type(radius) == "number" and radius == radius and radius >= 0 and radius <= ACID_MAX_RADIUS) then
+		return
+	end
+	flyAcid(from :: Vector3, landing :: Vector3, flightTime :: number, radius :: number)
 end)

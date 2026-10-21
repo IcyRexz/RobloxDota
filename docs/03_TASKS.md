@@ -49,22 +49,23 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 - Do: Fire the equipped weapon with the mouse (aim model confirmed by owner); server validates origin, direction/target, range, line of sight, rate and cooldown; cosmetic tracer.
 - Done when: shots hit enemies only through the server path; spam and bad payloads are dropped. Verify: A04 A07.
 
-### T09 — Enemy waves
+### T09 — Continuous enemy spawning (tug of war; was Enemy waves)
 - Depends on: T06. Reuses: `Minions.server.luau`, `MinionVisuals.client.luau` (old T11).
-- Do: Enemies spawn at the top, walk to the compound, target players / built structures / core; wave list per map in Config; alive cap; cleanup on mission end.
-- Done when: waves arrive on cue, attack all three target kinds, never exceed the cap, and stop after Results. Verify: A06 A10.
+- Do (owner 2026-10-21): both sides spawn small groups continuously, no waves; zombies march on the base, soldiers on the Zombie Core; caps per team with no backlog; then frontline pressure (3 levels, hysteresis), time escalation of zombie stats, Zombie Surge event; cleanup on mission end.
+- Done when: the front moves with the stronger army, an unpushed front drifts toward our base, caps are never exceeded, and spawning stops after Results. Verify: A06 A10.
 
 ### T10 — Base Core and win/loss
 - Depends on: T09. Reuses: core part, `StructureBars.client.luau`, `Announcements.client.luau`, old T09.
-- Do: Core health; loss on destruction; win when the final wave is cleared; result committed once per epoch.
+- Do: Core health; loss when the Base Core is destroyed; win when the Zombie Core is destroyed (owner 2026-10-21); stop spawning and damage; result committed once per epoch.
 - Done when: both outcomes reachable; late damage cannot change a committed result. Verify: A06.
 
 ### T11 — Gold economy
 - Depends on: T06 T09. Reuses: `CombatService` killer report.
-- Do: Gold per kill (per-player or team pool per owner decision); server-owned balance; HUD counter; reset each mission.
+- Do: Gold per kill (per-player or team pool per owner decision); server-owned balance; HUD counter; reset each mission. Done so far: per-player Gold from last hits, TEMPORARY starting Gold, and base upgrades at the Upgrade Workbench (Buildings, Melee Units, Archers; owner 2026-10-21).
 - Done when: Gold only changes on server-confirmed kills and purchases. Verify: A07 A08.
 
 ### T12 — Build phase and build nodes
+- ON HOLD (2026-10-21 tug-of-war redesign: no breaks between waves; owner to decide). T13 and T14 depend on it.
 - Depends on: T05 T11.
 - Do: Build-phase timer; build menu at nodes; server checks phase, node free, Gold, range to node; places a wall/turret/trap.
 - Done when: building works only in the build phase, only at nodes, only with enough Gold. Verify: A08.
@@ -98,7 +99,7 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 
 ### T18 — Heroes
 - Depends on: T07 T08 T17.
-- Do: Dota-style hero roster (owner decision 2026-10-21, replacing the four classes): each hero's stats, attack, abilities and talent pool (owner design first; Zeus draft in `docs/10_ZEUS_UPGRADES_PLAN.md`).
+- Do: three classes (owner decision 2026-10-21): Mage (built first: basic attack, passive, Q/E abilities, 9 masteries, automatic growth), then Archer and Warrior on the same structure, plus a way to choose a class.
 - Done when: each hero plays differently in a mission. Verify: A04.
 
 ### T19 — Weapons and gear

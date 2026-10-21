@@ -1,12 +1,15 @@
 --!strict
--- Effects for Zeus's abilities on every player's screen, driven by the server's
--- SkillFx event (HeroActions.server). World effects (not UI), in the lightning
--- colour of the basic attack:
+-- Effects for the Mage's abilities and masteries on every player's screen,
+-- driven by the server's SkillFx event (HeroActions.server). World effects
+-- (not UI), in the lightning colour of the basic attack:
 --  * Strike: the area flashes on the ground, then a jagged bolt drops from the
 --    sky when the damage lands, with a ring bursting outward.
---  * Dash: a short streak behind the dashing hero; DashPush: a ring where they land.
---  * BallCharge: a growing ball at the caster's hand; BallFly: the ball flies
---    to its target, following it, and bursts on arrival.
+--  * Storm (Thunderstorm): a faint ring stays on the area while it lasts;
+--    StormBolt: a thinner bolt drops on the enemy it strikes.
+--  * Teleport: a flash and a rising streak where the hero left, a burst where
+--    they land.
+--  * Resonance: a bright burst on the target of an Arcane Resonance hit.
+--  * Chain (Chain Bolt): a bolt from the first target to the second.
 --  * Hit (sent to the caster only): a damage number over the target, like the
 --    basic attack's (UI design system).
 -- Display only: the server has already decided every hit.
@@ -95,15 +98,6 @@ local function rootOf(model: Instance): BasePart?
 	return if root and root:IsA("BasePart") then root else nil
 end
 
-local function handOf(hero: Model): Vector3?
-	local hand = hero:FindFirstChild("RightHand")
-	if hand and hand:IsA("BasePart") then
-		return hand.Position
-	end
-	local root = rootOf(hero)
-	return if root then root.Position else nil
-end
-
 local function centreOf(target: Instance): Vector3?
 	if target:IsA("BasePart") then
 		return target.Position
@@ -138,89 +132,39 @@ local function onStrike(point: Vector3, radius: number, delay: number)
 	end)
 end
 
-local function onDash(hero: Model, duration: number)
-	local root = rootOf(hero)
-	if not root then
-		return
-	end
-	local trail = effectPart(Vector3.new(0.4, 0.4, 0.4), 0.3)
-	local start = root.Position
-	local elapsed = 0
-	local connection: RBXScriptConnection
-	connection = RunService.RenderStepped:Connect(function(deltaTime)
-		elapsed += deltaTime
-		local now = root.Position
-		local length = (now - start).Magnitude
-		if length > 0.05 then
-			trail.Size = Vector3.new(0.4, 0.4, length)
-			trail.CFrame = CFrame.lookAt((start + now) / 2, now)
-		end
-		if elapsed >= duration or not root.Parent then
-			connection:Disconnect()
-			fadeOut(trail, 0.3)
-		end
-	end)
-end
-
-local function onDashPush(point: Vector3, radius: number)
-	groundBurst(point, 1, radius, 0.5)
-end
-
-local function onBallCharge(hero: Model, chargeTime: number)
-	local ball = effectPart(Vector3.one * 0.4, 0.1)
+-- A ball of light that grows and fades.
+local function burst(at: Vector3, from: number, to: number, seconds: number)
+	local ball = effectPart(Vector3.one * from, 0.2)
 	ball.Shape = Enum.PartType.Ball
-	local light = Instance.new("PointLight")
-	light.Color = COLOR
-	light.Range = 8
-	light.Brightness = 2
-	light.Parent = ball
-	local elapsed = 0
-	local connection: RBXScriptConnection
-	connection = RunService.RenderStepped:Connect(function(deltaTime)
-		elapsed += deltaTime
-		local hand = handOf(hero)
-		if hand then
-			ball.Position = hand
-		end
-		local size = 0.4 + 1.6 * math.min(elapsed / math.max(chargeTime, 0.01), 1)
-		ball.Size = Vector3.one * size
-		if elapsed >= chargeTime or not hero.Parent then
-			connection:Disconnect()
-			ball:Destroy() -- BallFly takes over (or the cast fizzled)
-		end
+	ball.Position = at
+	fadeOut(ball, seconds, Vector3.one * to)
+end
+
+local function onStorm(point: Vector3, radius: number, duration: number)
+	local area = GroundRing.new(COLOR, radius, 0.5, 0.85)
+	area:place(point)
+	task.delay(duration, function()
+		area:destroy()
 	end)
 end
 
-local function onBallFly(hero: Model, target: Instance, flightTime: number)
-	local start = handOf(hero)
-	if not start then
-		return
+local function onStormBolt(point: Vector3)
+	bolt(point + Vector3.new(0, 45, 0), point, 0.35)
+	burst(point, 1, 4, 0.25)
+end
+
+local function onTeleport(from: Vector3, to: Vector3)
+	burst(from, 2, 6, 0.3)
+	bolt(from, from + Vector3.new(0, 8, 0), 0.3)
+	burst(to, 1, 5, 0.35)
+	groundBurst(to - Vector3.new(0, 2.5, 0), 0.5, 3, 0.35)
+end
+
+local function onResonance(target: Instance)
+	local at = centreOf(target)
+	if at then
+		burst(at, 2, 7, 0.35)
 	end
-	local ball = effectPart(Vector3.one * 2, 0)
-	ball.Shape = Enum.PartType.Ball
-	local light = Instance.new("PointLight")
-	light.Color = COLOR
-	light.Range = 12
-	light.Brightness = 3
-	light.Parent = ball
-	ball.Position = start
-	local lastPoint = centreOf(target) or start
-	local elapsed = 0
-	local connection: RBXScriptConnection
-	connection = RunService.RenderStepped:Connect(function(deltaTime)
-		elapsed += deltaTime
-		lastPoint = centreOf(target) or lastPoint -- follow the target while it exists
-		local alpha = math.min(elapsed / math.max(flightTime, 0.01), 1)
-		ball.Position = start:Lerp(lastPoint, alpha)
-		if alpha >= 1 then
-			connection:Disconnect()
-			ball:Destroy()
-			local burst = effectPart(Vector3.one * 2, 0.2)
-			burst.Shape = Enum.PartType.Ball
-			burst.Position = lastPoint
-			fadeOut(burst, 0.35, Vector3.one * 9)
-		end
-	end)
 end
 
 skillFx.OnClientEvent:Connect(function(kind: unknown, a: unknown, b: unknown, c: unknown)
@@ -228,21 +172,25 @@ skillFx.OnClientEvent:Connect(function(kind: unknown, a: unknown, b: unknown, c:
 		if typeof(a) == "Vector3" and validRadius(b) and validTime(c) then
 			onStrike(a, b :: number, c :: number)
 		end
-	elseif kind == "Dash" then
-		if typeof(a) == "Instance" and a:IsA("Model") and validTime(b) then
-			onDash(a, b :: number)
+	elseif kind == "Storm" then
+		if typeof(a) == "Vector3" and validRadius(b) and validTime(c) then
+			onStorm(a, b :: number, c :: number)
 		end
-	elseif kind == "DashPush" then
-		if typeof(a) == "Vector3" and validRadius(b) then
-			onDashPush(a, b :: number)
+	elseif kind == "StormBolt" then
+		if typeof(a) == "Vector3" then
+			onStormBolt(a)
 		end
-	elseif kind == "BallCharge" then
-		if typeof(a) == "Instance" and a:IsA("Model") and validTime(b) then
-			onBallCharge(a, b :: number)
+	elseif kind == "Teleport" then
+		if typeof(a) == "Vector3" and typeof(b) == "Vector3" and (a - b).Magnitude < 200 then
+			onTeleport(a, b)
 		end
-	elseif kind == "BallFly" then
-		if typeof(a) == "Instance" and a:IsA("Model") and typeof(b) == "Instance" and validTime(c) then
-			onBallFly(a, b, c :: number)
+	elseif kind == "Resonance" then
+		if typeof(a) == "Instance" then
+			onResonance(a)
+		end
+	elseif kind == "Chain" then
+		if typeof(a) == "Vector3" and typeof(b) == "Vector3" and (a - b).Magnitude < 100 then
+			bolt(a, b, 0.2)
 		end
 	elseif kind == "Hit" then
 		if typeof(a) == "Instance" and type(b) == "number" and b == b and b > 0 and b < 100000 then

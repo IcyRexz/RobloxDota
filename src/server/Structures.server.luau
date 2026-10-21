@@ -3,11 +3,13 @@
 -- Each living tower shoots the nearest enemy unit in range (keeping its current
 -- target while it stays in range) every TowerAttackInterval seconds. The shot
 -- flies to its target and the damage lands on arrival, so a tower can steal a
--- last hit just like a minion.
+-- last hit just like a minion. Damage, range and attack speed include our
+-- Buildings upgrades (BaseUpgrades.towerStats, read on every check).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local BaseUpgrades = require(script.Parent.BaseUpgrades)
 local CombatService = require(script.Parent.CombatService)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
@@ -21,6 +23,7 @@ type Tower = {
 	team: string,
 	target: Model?,
 	nextShotAt: number,
+	range: number, -- with upgrades, refreshed every tick
 }
 
 local arena = Workspace:WaitForChild("Arena")
@@ -44,7 +47,7 @@ local towers: { Tower } = {}
 for _, item in arena:GetDescendants() do
 	local team = item:GetAttribute("Team")
 	if item:IsA("BasePart") and item:GetAttribute("Kind") == "Tower" and typeof(team) == "string" then
-		table.insert(towers, { part = item, team = team, target = nil, nextShotAt = 0 })
+		table.insert(towers, { part = item, team = team, target = nil, nextShotAt = 0, range = StructureConfig.TowerRange })
 	end
 end
 
@@ -64,7 +67,7 @@ local function canShoot(tower: Tower, unit: Model): boolean
 		return false
 	end
 	local root = Targeting.rootOf(unit)
-	return root ~= nil and Targeting.planarDistance(root.Position, tower.part.Position) <= StructureConfig.TowerRange
+	return root ~= nil and Targeting.planarDistance(root.Position, tower.part.Position) <= tower.range
 end
 
 -- Keeps the current target while it stays shootable; otherwise the nearest
@@ -92,12 +95,13 @@ local function fire(tower: Tower, target: Model, now: number)
 	local root = Targeting.rootOf(target) :: BasePart
 	local flightTime = (root.Position - muzzleOf(tower)).Magnitude / StructureConfig.TowerShotSpeed
 	local towerPart, team = tower.part, tower.team
-	tower.nextShotAt = now + StructureConfig.TowerAttackInterval
+	local stats = BaseUpgrades.towerStats(team)
+	tower.nextShotAt = now + stats.attackInterval
 	shotEvent:FireAllClients(towerPart, target, flightTime)
 	-- Lands even if the target walks out of range mid-flight; applyDamage refuses
 	-- it if the target is already dead (another unit took the last hit).
 	task.delay(flightTime, function()
-		CombatService.applyDamage(target, StructureConfig.TowerDamage, towerPart, team)
+		CombatService.applyDamage(target, stats.damage, towerPart, team)
 	end)
 end
 
@@ -129,6 +133,7 @@ local function updateAll()
 	local now = os.clock()
 	for _, tower in towers do
 		if CombatService.isAlive(tower.part) then
+			tower.range = BaseUpgrades.towerStats(tower.team).range
 			tower.target = chooseTarget(tower)
 			local target = tower.target
 			if target and now >= tower.nextShotAt then

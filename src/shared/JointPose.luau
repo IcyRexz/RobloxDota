@@ -74,4 +74,37 @@ function JointPose.tween(joint: Joint, offset: CFrame, info: TweenInfo): { Tween
 	return tweens
 end
 
+-- Animation layer (owner 2026-10-22, the swing pattern from the owner's other
+-- project). Resting-pose offsets (set/tween above) are hidden on joints the
+-- walk/idle animations move strongly, such as the shoulders. Instead, every
+-- frame after the animations have run (RunService.PreSimulation), add a
+-- rotation on top of the joint's animated Transform.
+
+-- The animated joints named `name` in the model: Motor6Ds and/or
+-- AnimationConstraints, whichever the rig uses (both have a Transform).
+function JointPose.animated(model: Model, name: string): { Instance }
+	local joints: { Instance } = {}
+	for _, item in model:GetDescendants() do
+		if item.Name == name and (item:IsA("Motor6D") or item:IsA("AnimationConstraint")) then
+			table.insert(joints, item)
+		end
+	end
+	return joints
+end
+
+-- Adds `rotation` on top of this frame's animation, around the parent part's
+-- axes (e.g. CFrame.Angles(a, 0, 0) on a shoulder turns the arm about the
+-- torso's left-right axis; positive raises it forward). Call every frame from
+-- PreSimulation while the motion lasts.
+function JointPose.addRotation(joint: Instance, rotation: CFrame)
+	local frame = CFrame.identity
+	if joint:IsA("Motor6D") then
+		frame = joint.C0.Rotation
+	elseif joint:IsA("AnimationConstraint") and joint.Attachment0 then
+		frame = joint.Attachment0.CFrame.Rotation
+	end
+	local animated = joint :: any
+	animated.Transform = frame:Inverse() * rotation * frame * animated.Transform
+end
+
 return table.freeze(JointPose)

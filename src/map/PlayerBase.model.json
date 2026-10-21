@@ -36,7 +36,7 @@
         ],
         "Position": [
           -138,
-          0.5,
+          2.0,
           0
         ],
         "Color": [
@@ -46,12 +46,197 @@
         ],
         "Material": "SmoothPlastic",
         "Neutral": true,
-        "Duration": 0
+        "Duration": 0,
+        "Transparency": 1,
+        "CanCollide": false
       },
       "attributes": {
         "Team": "Defenders",
         "Kind": "Spawn"
       }
+    },
+    {
+      "name": "SpawnBase",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Shape": "Cylinder",
+        "Size": [
+          2.2,
+          19.2,
+          19.2
+        ],
+        "Color": [
+          0.42,
+          0.42,
+          0.45
+        ],
+        "Material": "Slate",
+        "CanTouch": false,
+        "CFrame": {
+          "CFrame": {
+            "position": [
+              -138,
+              1.0,
+              0
+            ],
+            "orientation": [
+              [
+                0,
+                -1,
+                0
+              ],
+              [
+                1,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                1
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "SpawnGlow",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Shape": "Cylinder",
+        "Size": [
+          0.3,
+          18.8,
+          18.8
+        ],
+        "Color": [
+          0.96,
+          0.77,
+          0.32
+        ],
+        "Material": "Neon",
+        "CanTouch": false,
+        "CFrame": {
+          "CFrame": {
+            "position": [
+              -138,
+              2.1,
+              0
+            ],
+            "orientation": [
+              [
+                0,
+                -1,
+                0
+              ],
+              [
+                1,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                1
+              ]
+            ]
+          }
+        },
+        "Transparency": 0.3,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CastShadow": false
+      }
+    },
+    {
+      "name": "SpawnPad",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Shape": "Cylinder",
+        "Size": [
+          0.4,
+          18,
+          18
+        ],
+        "Color": [
+          0.86,
+          0.83,
+          0.74
+        ],
+        "Material": "SmoothPlastic",
+        "CanTouch": false,
+        "CFrame": {
+          "CFrame": {
+            "position": [
+              -138,
+              2.3,
+              0
+            ],
+            "orientation": [
+              [
+                0,
+                -1,
+                0
+              ],
+              [
+                1,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                1
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "UpgradeWorkbench",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "Size": [
+          2.5,
+          3,
+          5
+        ],
+        "Color": [
+          0.45,
+          0.31,
+          0.18
+        ],
+        "Material": "WoodPlanks",
+        "CanTouch": false,
+        "Position": [
+          -133,
+          1.5,
+          13
+        ]
+      },
+      "attributes": {
+        "Kind": "Workbench"
+      },
+      "children": [
+        {
+          "name": "OpenUpgrades",
+          "className": "ProximityPrompt",
+          "properties": {
+            "ActionText": "Open Upgrades",
+            "ObjectText": "Upgrade Workbench",
+            "KeyboardKeyCode": "F",
+            "HoldDuration": 0,
+            "MaxActivationDistance": 10,
+            "RequiresLineOfSight": false
+          }
+        }
+      ]
     },
     {
       "name": "BaseCore",
@@ -79,9 +264,10 @@
         "EntityId": "BaseCore",
         "Team": "Defenders",
         "Kind": "Core",
-        "MaxHealth": 1200,
-        "Health": 1200,
-        "GuardedBy": "LeftInhibitor,RightInhibitor"
+        "MaxHealth": 1000,
+        "Health": 1000,
+        "GuardedBy": "MeleeBarracks,ArcherBarracks",
+        "Icon": "🛡️"
       }
     },
     {
@@ -202,14 +388,14 @@
       }
     },
     {
-      "name": "LeftInhibitor",
+      "name": "MeleeBarracks",
       "className": "Part",
       "properties": {
         "Anchored": true,
         "Size": [
+          12,
           8,
-          8,
-          8
+          16
         ],
         "Position": [
           -104,
@@ -224,12 +410,14 @@
         "Material": "SmoothPlastic"
       },
       "attributes": {
-        "EntityId": "LeftInhibitor",
+        "EntityId": "MeleeBarracks",
         "Team": "Defenders",
         "Kind": "Barracks",
         "MaxHealth": 700,
         "Health": 700,
-        "GuardedBy": "LeftTower"
+        "GuardedBy": "LeftTower",
+        "Icon": "⚔️",
+        "DisplayName": "Barracks"
       }
     },
     {
@@ -255,7 +443,7 @@
       "attributes": {
         "Team": "Defenders",
         "Kind": "MinionSpawn",
-        "Source": "LeftInhibitor"
+        "Source": "MeleeBarracks"
       }
     },
     {
@@ -342,14 +530,14 @@
       }
     },
     {
-      "name": "RightInhibitor",
+      "name": "ArcherBarracks",
       "className": "Part",
       "properties": {
         "Anchored": true,
         "Size": [
+          12,
           8,
-          8,
-          8
+          16
         ],
         "Position": [
           -104,
@@ -364,12 +552,14 @@
         "Material": "SmoothPlastic"
       },
       "attributes": {
-        "EntityId": "RightInhibitor",
+        "EntityId": "ArcherBarracks",
         "Team": "Defenders",
         "Kind": "Barracks",
         "MaxHealth": 700,
         "Health": 700,
-        "GuardedBy": "RightTower"
+        "GuardedBy": "RightTower",
+        "Icon": "🏹",
+        "DisplayName": "Barracks"
       }
     },
     {
@@ -395,7 +585,7 @@
       "attributes": {
         "Team": "Defenders",
         "Kind": "MinionSpawn",
-        "Source": "RightInhibitor"
+        "Source": "ArcherBarracks"
       }
     },
     {

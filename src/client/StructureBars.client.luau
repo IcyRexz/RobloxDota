@@ -1,8 +1,9 @@
 --!strict
 -- Name and health bar above every tower, barracks and core, in the game's UI
 -- design system (docs/11_UI_DESIGN.md): the name in floating white text above
--- a thin 5 px bar, green for your side, red for the enemy. No numbers inside
--- the bar, no segment ticks. Runs on each player's own screen because "ally"
+-- an 18 px bar, green for your side, red for the enemy, with "current / max"
+-- inside it (owner 2026-10-21: the numbers of the MOBA-era bars, a bit
+-- bigger than them; no segment ticks). Runs on each player's own screen because "ally"
 -- and "enemy" depend on who is looking. Shown within Config.Display.HealthBarRange.
 -- The bars only display health; the server owns the real numbers (the
 -- structure's Health / MaxHealth attributes) and the bars follow them.
@@ -15,8 +16,8 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
-local BAR_WIDTH = 120 -- on-screen pixels, so it stays readable at any distance
-local NAME_HEIGHT = 16
+local BAR_WIDTH = 200 -- on-screen pixels, so it stays readable at any distance
+local NAME_HEIGHT = 24
 local VISIBILITY_CHECK_SECONDS = 0.2
 -- Players are always on our side; used until the server sets the attribute.
 local DEFAULT_TEAM = Config.Teams.Defenders
@@ -25,7 +26,7 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local arena = Workspace:WaitForChild("Arena")
 
-type Bar = { billboard: BillboardGui, structure: BasePart, fill: Frame }
+type Bar = { billboard: BillboardGui, structure: BasePart, fill: Frame, healthText: TextLabel }
 local bars: { Bar } = {}
 
 local function localTeam(): string
@@ -46,6 +47,7 @@ local function refresh(bar: Bar)
 	local isAlly = bar.structure:GetAttribute("Team") == localTeam()
 	bar.fill.BackgroundColor3 = if isAlly then UiTheme.Ally else UiTheme.Enemy
 	bar.fill.Size = UDim2.fromScale(current / max, 1)
+	bar.healthText.Text = `{math.ceil(current)} / {math.round(max)}`
 end
 
 local function createBar(structure: BasePart)
@@ -57,16 +59,29 @@ local function createBar(structure: BasePart)
 	billboard.LightInfluence = 0
 	billboard.ResetOnSpawn = false
 
-	local nameLabel = UiTheme.text(billboard, UiTheme.TextSize.Small, UiTheme.Font.Bold)
+	local nameLabel = UiTheme.text(billboard, UiTheme.TextSize.Title, UiTheme.Font.Bold)
 	nameLabel.Size = UDim2.new(1, 0, 0, NAME_HEIGHT)
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
-	nameLabel.Text = structure.Name:gsub("(%l)(%u)", "%1 %2") -- "LeftTower" -> "Left Tower"
+	-- Name with the building's icon (Icon attribute: barracks and Base Core).
+	-- DisplayName overrides the part name (owner 2026-10-21: both barracks
+	-- read "Barracks").
+	local displayName = structure:GetAttribute("DisplayName")
+	local baseName = if type(displayName) == "string"
+		then displayName
+		else structure.Name:gsub("(%l)(%u)", "%1 %2") -- "LeftTower" -> "Left Tower"
+	local icon = structure:GetAttribute("Icon")
+	nameLabel.Text = if type(icon) == "string" then `{icon}  {baseName}` else baseName
 	UiTheme.floatingText(nameLabel)
 
 	local parts = UiTheme.bar(billboard, UiTheme.Bar.Structure, UiTheme.Ally)
 	parts.track.Position = UDim2.fromOffset(0, NAME_HEIGHT + 4)
+	local healthText = UiTheme.text(parts.track, UiTheme.TextSize.Body, UiTheme.Font.Bold)
+	healthText.Size = UDim2.fromScale(1, 1)
+	healthText.TextXAlignment = Enum.TextXAlignment.Center
+	healthText.ZIndex = 2 -- above the fill
+	UiTheme.floatingText(healthText)
 
-	local bar: Bar = { billboard = billboard, structure = structure, fill = parts.fill }
+	local bar: Bar = { billboard = billboard, structure = structure, fill = parts.fill, healthText = healthText }
 	table.insert(bars, bar)
 	refresh(bar)
 	structure:GetAttributeChangedSignal("Health"):Connect(function()
@@ -94,6 +109,12 @@ for _, item in arena:GetDescendants() do
 		createBar(item)
 	end
 end
+-- Structures added mid-match (zombie nests, placed straight into the Arena).
+arena.ChildAdded:Connect(function(item: Instance)
+	if item:IsA("BasePart") and Targeting.StructureKinds[item:GetAttribute("Kind")] then
+		createBar(item)
+	end
+end)
 
 -- Recolor every bar if this player's team changes (e.g. when a match assigns teams).
 player:GetAttributeChangedSignal("Team"):Connect(function()

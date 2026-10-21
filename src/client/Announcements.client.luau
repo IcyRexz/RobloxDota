@@ -18,8 +18,7 @@ local space = UiTheme.space
 local SHOW_SECONDS = 3
 local FADE_SECONDS = 0.25
 local DEFENDERS = Config.Teams.Defenders
--- The map calls it Barracks; players know it as the inhibitor.
-local DISPLAY_NAMES: { [string]: string } = { Tower = "tower", Barracks = "inhibitor", Core = "core" }
+local DISPLAY_NAMES: { [string]: string } = { Tower = "tower", Barracks = "barracks", Core = "core", Nest = "nest" }
 -- How each side is named on banners.
 local TEAM_LABELS: { [string]: string } = { [DEFENDERS] = "We", [Config.Teams.Zombies] = "Zombies" }
 local UNIT_LABELS: { [string]: string } = { [DEFENDERS] = "Our minions", [Config.Teams.Zombies] = "Zombies" }
@@ -28,6 +27,7 @@ local DEFAULT_TEAM = DEFENDERS
 
 local player = Players.LocalPlayer
 local destroyedEvent = ReplicatedStorage:WaitForChild("StructureDestroyed") :: RemoteEvent
+local zombieEvent = ReplicatedStorage:WaitForChild("ZombieEvent") :: RemoteEvent
 
 local function localTeam(): string
 	local team = player:GetAttribute("Team")
@@ -136,4 +136,20 @@ destroyedEvent.OnClientEvent:Connect(function(kind: unknown, team: unknown, kill
 		headline = `{TEAM_LABELS[team]} lost a {name}`,
 		subline = detail,
 	})
+end)
+
+-- Battlefield events (ZombieEvents.luau) --------------------------------------------
+
+zombieEvent.OnClientEvent:Connect(function(id: unknown, phase: unknown)
+	if type(id) ~= "string" or (phase ~= "Start" and phase ~= "End") then
+		return
+	end
+	for _, info in Config.Events.List do
+		if info.id == id then
+			announce(if phase == "Start"
+				then { headline = string.upper(info.name), subline = info.text }
+				else { headline = `{info.name} is over`, subline = "Zombies are back to normal" })
+			return
+		end
+	end
 end)

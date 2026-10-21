@@ -1,7 +1,7 @@
 --!strict
 -- The battlefield's rolling ground (owner request 2026-10-20): Roblox Terrain
 -- with gentle rises up to MAX_RISE and dips down to MAX_DEPTH studs, flat
--- (height 0) in and around our base and around the zombie cores and spawns, so
+-- (height 0) in and around our base and around the zombie core, so
 -- structures never float or sink. Hills never block attacks (owner decision
 -- 2026-10-20): Targeting's line of sight ignores Terrain.
 --
@@ -159,6 +159,10 @@ local BAKE_KEY = string.format(
 	FLAT_MARGIN_BASE, FLAT_MARGIN_ZOMBIES, BLEND, VOXEL, BOTTOM,
 	math.floor(minX), math.floor(maxX), math.floor(minZ), math.floor(maxZ)
 )
+-- The flat areas too, so moving the base or the zombie core asks for a re-bake.
+for _, box in flatBoxes do
+	BAKE_KEY ..= string.format("/%d,%d,%d,%d", math.floor(box.x0), math.floor(box.x1), math.floor(box.z0), math.floor(box.z1))
+end
 
 function Landscape.buildTerrain()
 	local terrain = Workspace.Terrain

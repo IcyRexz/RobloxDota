@@ -1,4 +1,6 @@
-# Zeus upgrade pool — PLAN (owner review needed)
+# Zeus upgrade pool — REPLACED
+
+**Replaced 2026-10-21 (owner):** Zeus is now the **Mage** class with automatic stat growth and a 3x3 mastery grid (one pick every 5 levels); random talent cards, Storm Dash and Ball Lightning are removed. The current design is in `docs/02_GDD.md`. Kept below as history.
 
 Status: **partly decided and partly built (2026-10-21).** Decided by the owner and **built**: **25 levels, no masteries**; the three abilities below (Lightning Strike, Storm Dash, Ball Lightning) with their unlock cards; the slot rule for offers. Still a proposal: the rest of the 25-talent pool (stat and modifier talents beyond the three placeholder stat cards).
 

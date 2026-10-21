@@ -1,22 +1,26 @@
 --!strict
--- Makes every player's character the hero (Zeus for now) and owns hero health.
+-- Makes every player's character the hero (the Mage for now) and owns hero health.
 --  * Marks the character Kind = Hero with the player's team, so minions and
 --    towers can target it and CombatService can damage it.
 --  * Health lives in the server-owned Health/MaxHealth attributes, like every
 --    other unit. The Humanoid's own health just mirrors it (0 = dead), and
---    Roblox's built-in health regeneration is removed.
+--    Roblox's built-in health regeneration is removed; our own regeneration
+--    (HeroProgress.healthRegen, health per second) heals living heroes here.
 --  * Death: Roblox respawns the player after Config.Hero.RespawnTime seconds
 --    with full health. Spawn protection and death rules come in T08.
---  * Max health and walk speed include the player's level-up picks (HeroProgress),
---    so upgrades survive respawning.
+--  * Max health and walk speed include the player's level growth (HeroProgress),
+--    so it survives respawning.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local CombatService = require(script.Parent.CombatService)
 local Config = require(ReplicatedStorage.Shared.Config)
 local HeroProgress = require(script.Parent.HeroProgress)
 
 local HeroConfig = Config.Hero
+
+local REGEN_TICK = 0.5 -- seconds between regeneration steps
 
 Players.RespawnTime = HeroConfig.RespawnTime
 
@@ -91,3 +95,26 @@ for _, player in Players:GetPlayers() do
 	onPlayer(player)
 end
 Players.PlayerAdded:Connect(onPlayer)
+
+-- Natural regeneration: living heroes below max health heal a little each tick.
+-- The dead (health 0) do not; they come back full on respawn.
+local function regenerate(elapsed: number)
+	for _, player in Players:GetPlayers() do
+		local character = player.Character
+		if not (character and character:GetAttribute("Kind") == "Hero" and CombatService.isAlive(character)) then
+			continue
+		end
+		local maxHealth = character:GetAttribute("MaxHealth")
+		local health = CombatService.getHealth(character)
+		if typeof(maxHealth) == "number" and health < maxHealth then
+			local heal = HeroProgress.healthRegen(player) * elapsed
+			character:SetAttribute("Health", math.min(health + heal, maxHealth))
+		end
+	end
+end
+
+task.spawn(function()
+	while true do
+		regenerate(task.wait(REGEN_TICK))
+	end
+end)

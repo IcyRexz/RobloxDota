@@ -25,8 +25,8 @@ local PANEL_WIDTH = 260
 local PORTRAIT = 44
 local LINGER_SECONDS = 0.6 -- stays this long after the target is lost
 local FADE_SECONDS = 0.2
-local UNIT_NAMES: { [string]: string } = { Zombie = "Zombie", Melee = "Swordsman", Archer = "Archer" }
-local STRUCTURE_TAGS: { [string]: string } = { Tower = "TWR", Barracks = "INH", Core = "CORE" }
+local UNIT_NAMES: { [string]: string } = { Zombie = "Zombie", Brute = "Brute", Spitter = "Spitter", Melee = "Swordsman", Archer = "Archer" }
+local STRUCTURE_TAGS: { [string]: string } = { Tower = "TWR", Barracks = "BRK", Core = "CORE", Nest = "NEST" }
 -- Players are always on our side; used until the server sets the attribute.
 local DEFAULT_TEAM = Config.Teams.Defenders
 
@@ -98,7 +98,11 @@ local function displayName(target: Instance): string
 		local owner = Players:GetPlayerFromCharacter(target)
 		return if owner then owner.DisplayName else target.Name
 	end
-	local spaced = target.Name:gsub("(%l)(%u)", "%1 %2") -- "LeftZombieCore" -> "Left Zombie Core"
+	local override = target:GetAttribute("DisplayName") -- e.g. both barracks: "Barracks"
+	if type(override) == "string" then
+		return override
+	end
+	local spaced = target.Name:gsub("(%l)(%u)", "%1 %2") -- "ZombieCore" -> "Zombie Core"
 	return spaced
 end
 

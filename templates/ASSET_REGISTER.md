@@ -40,3 +40,23 @@ Animations are deferred (owner decision 2026-10-20); required animation keys wil
 - Creator: Roblox (default character animations), usable in any experience
 - Used by: `src/server/Minions.server.luau`
 - Non-owner published-place playback verified: NOT RUN
+
+### ModelTree1 / ModelTree2 (pine trees)
+- Logical key / file: `assets/ModelTree1.rbxmx` (PineTree1), `assets/ModelTree2.rbxmx` (PineTree2); cloned onto every map tree by `src/server/NatureArt.server.luau`
+- Roblox asset ID / source URL: Toolbox model "low poly trees" (free), exact asset ID UNKNOWN — owner to confirm
+- Type: model (2 MeshParts each: Leaf, Trunk; no scripts; checked 2026-10-21)
+- Mesh asset IDs inside: 6194760834, 6177966904 (tree 1); 6194768710, 6177967350 (tree 2)
+- Creator and owning account/group: ExedusDev (per the pack's "FREE ASSETS By ExedusDev" sign) — to confirm
+- Permission/license and attribution required: free Toolbox asset; credit ExedusDev unless the owner learns otherwise
+- Non-owner published-place playback verified: NOT RUN (meshes must load for a non-owner account)
+- Replacement/fallback if unavailable: the tree's plain trunk and canopy blocks stay visible (script skips a missing model)
+
+### ModelRock1 (rock)
+- Logical key / file: `assets/ModelRock1.rbxmx` (model "lowpolyrocks"); cloned onto 24 map rocks by `src/server/NatureArt.server.luau`
+- Roblox asset ID / source URL: Toolbox model, exact asset ID UNKNOWN — owner to confirm
+- Type: model (1 MeshPart; no scripts; checked 2026-10-21)
+- Mesh asset IDs inside: 14603612699
+- Creator and owning account/group: UNKNOWN — owner to confirm
+- Permission/license and attribution required: UNKNOWN (free Toolbox asset)
+- Non-owner published-place playback verified: NOT RUN (mesh must load for a non-owner account)
+- Replacement/fallback if unavailable: the rock's plain grey block stays visible (script skips a missing model)

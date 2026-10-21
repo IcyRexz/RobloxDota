@@ -1,12 +1,15 @@
 --!strict
--- Spawns unit waves and moves them as a swarm across the open battlefield.
+-- Spawns units continuously (small groups, no waves) and moves them as a swarm
+-- across the open battlefield, so the front moves with whichever side is stronger.
 -- Our minions (team Defenders) come out of each standing inhibitor and head for the
--- zombie cores; zombies (team Zombies) come out of each standing zombie core and
--- head for our Base Core. There are no lanes or routes: every unit follows a
--- shared flow field (SwarmField) around walls and structures, spreads out
--- from its neighbours (separation) and drifts a little (wander), so the horde
--- fans out over open ground and squeezes through the base openings. Each
--- zombie picks one of the base openings at spawn, nearer ones more likely.
+-- zombie core; zombies (team Zombies) appear anywhere on a ring around the
+-- zombie core and head for our Base Core. There are no lanes or routes: every
+-- unit follows a shared flow field (SwarmField) around walls and structures,
+-- spreads out from its neighbours (separation) and drifts a little (wander),
+-- so the horde fans out over open ground and squeezes through the base
+-- openings. Each zombie group first walks to its own rally point somewhere
+-- across the battlefield, so the horde covers the whole field instead of taking
+-- the shortest line, then picks a base opening, the one nearer that point more likely.
 -- A unit walking at an enemy goes straight only while the line is open on the
 -- flow-field grid; otherwise it follows a short detour around the obstacle.
 -- A unit that stops making progress gets a few seconds of pure flow/detour
@@ -15,18 +18,29 @@
 -- inhibitor (barracks) bonus, and obeying stuns and slows from hero abilities
 -- (UnitEffects): a stunned unit stands still and does not attack; a slowed
 -- unit walks slower.
+-- Base upgrades (BaseUpgrades, rules in BaseUpgradeRules): our soldiers get
+-- what was bought at their barracks (health, damage, move and attack speed,
+-- range, splash, extra soldiers per group). A minion keeps its unupgraded
+-- `base` stats; its `stats` are base + upgrades, worked out again whenever
+-- something is bought, so living soldiers improve at once (keeping their
+-- health share) and new ones start with it.
 
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local BaseUpgrades = require(script.Parent.BaseUpgrades)
+local BaseUpgradeRules = require(ReplicatedStorage.Shared.BaseUpgradeRules)
 local CombatService = require(script.Parent.CombatService)
 local SwarmField = require(script.Parent.SwarmField)
 local UnitEffects = require(script.Parent.UnitEffects)
 local Config = require(ReplicatedStorage.Shared.Config)
 local JointPose = require(ReplicatedStorage.Shared.JointPose)
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
+local UnitRequests = require(script.Parent.UnitRequests)
+local ZombieEvents = require(script.Parent.ZombieEvents)
+local Landscape = require(script.Parent.Landscape)
 
 type MinionStats = Config.MinionStats
 
@@ -37,7 +51,10 @@ local TICK_SECONDS = 0.2
 -- minion moves again. Stops minions flickering between walking and standing.
 local HOLD_SLACK = 1.5
 -- Swarm steering (studs and weights; tune by eye in Studio).
-local SPAWN_SCATTER = 7 -- units appear anywhere within this radius of their spawn marker
+local SPAWN_SCATTER = 7 -- our units appear anywhere within this radius of their spawn marker
+local SPAWN_TRIES = 8 -- random spots tried for a zombie spawn or rally point before giving up
+local RALLY_ARRIVE = 8 -- studs from its rally point where a zombie heads for the base
+local BURST_GROUP_SIZE = 5 -- Zombie Surge's extra zombies come out in clusters this big
 local SEPARATION_RADIUS = 4.5 -- neighbours closer than this push each other apart
 local SEPARATION_WEIGHT = 1.4
 local WANDER_WEIGHT = 0.45 -- sideways drift, so units fan out instead of queueing
@@ -60,11 +77,18 @@ local ZOMBIES = Config.Teams.Zombies
 local TEAM_COLORS: { [string]: Color3 } = {
 	[DEFENDERS] = Color3.fromRGB(158, 140, 100),
 }
--- Zombies: dark green skin, blood-red shirt, muddy legs, glowing red eyes.
-local ZOMBIE_SKIN = Color3.fromRGB(78, 104, 58)
-local ZOMBIE_SHIRT = Color3.fromRGB(110, 34, 30)
-local ZOMBIE_LEGS = Color3.fromRGB(62, 70, 48)
+-- Zombies: glowing red eyes, no face; skin, shirt and legs by kind.
+type ZombieLook = { skin: Color3, shirt: Color3, legs: Color3 }
+local ZOMBIE_LOOKS: { [string]: ZombieLook } = {
+	-- dark green skin, blood-red shirt, muddy legs
+	Zombie = { skin = Color3.fromRGB(78, 104, 58), shirt = Color3.fromRGB(110, 34, 30), legs = Color3.fromRGB(62, 70, 48) },
+	-- darker, greyer skin, near-black red shirt (and 1.5x the size)
+	Brute = { skin = Color3.fromRGB(62, 82, 50), shirt = Color3.fromRGB(70, 22, 20), legs = Color3.fromRGB(44, 48, 36) },
+	-- sickly yellow-green, with a glowing acid mouth
+	Spitter = { skin = Color3.fromRGB(132, 160, 62), shirt = Color3.fromRGB(86, 96, 34), legs = Color3.fromRGB(62, 70, 48) },
+}
 local ZOMBIE_EYES = Color3.fromRGB(255, 40, 30)
+local ACID_COLOR = Color3.fromRGB(50, 140, 35) -- owner 2026-10-22: darker acid green; same as MinionVisuals.client
 
 -- Roblox's own default R15 animations (free for any game). "Tool hold" raises
 -- the right arm forward, the way players hold a sword.
@@ -80,7 +104,8 @@ type Minion = {
 	humanoid: Humanoid,
 	root: BasePart,
 	team: string,
-	stats: MinionStats,
+	base: MinionStats, -- before base upgrades
+	stats: MinionStats, -- what it fights with: base + base upgrades
 	field: string, -- which SwarmField it follows
 	wander: number, -- current sideways drift, -1 (left) .. 1 (right)
 	expiresAt: number,
@@ -102,6 +127,10 @@ type Minion = {
 	progressAt: number,
 	unstickUntil: number, -- plain steering until then (see updateMinion)
 	lastTarget: Instance?, -- zombies: what it went for last tick
+	rally: Vector3?, -- zombies: where to walk before heading for the base (nil once there)
+	-- Nest guards: the nest they stay by and the spot they stand on, until it falls.
+	guard: BasePart?,
+	guardPoint: Vector3?,
 }
 
 local arena = Workspace:WaitForChild("Arena")
@@ -123,6 +152,12 @@ shotEvent.Parent = ReplicatedStorage
 local swingEvent = Instance.new("RemoteEvent")
 swingEvent.Name = "MinionSwing"
 swingEvent.Parent = ReplicatedStorage
+
+-- Tells every client to show a spitter's acid blob: (spitter, from, landing,
+-- flightTime, radius). Server -> client only; the server never listens to it.
+local acidEvent = Instance.new("RemoteEvent")
+acidEvent.Name = "ZombieAcid"
+acidEvent.Parent = ReplicatedStorage
 
 PhysicsService:RegisterCollisionGroup(COLLISION_GROUP)
 PhysicsService:CollisionGroupSetCollidable(COLLISION_GROUP, COLLISION_GROUP, false)
@@ -174,10 +209,32 @@ local function addBow(body: Model)
 	addWeaponPart(hand, Vector3.new(0.05, 0.05, 3.24), Color3.fromRGB(230, 230, 230), CFrame.new(0, 0.26, 0)) -- string
 end
 
--- Zombie look: no face, two glowing red eyes, both arms stretched forward.
--- The arms are raised by turning the shoulder joints' resting pose (JointPose),
--- so the walk animation and the client's swipe still play on top of it.
-local function makeZombie(body: Model)
+-- A small glowing ball welded to the front of the head (eyes, acid mouth).
+local function addFacePart(body: Model, head: BasePart, name: string, size: Vector3, color: Color3, offset: CFrame)
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Shape = Enum.PartType.Ball
+	part.Size = size
+	part.Color = color
+	part.Material = Enum.Material.Neon
+	part.Massless = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CFrame = head.CFrame * offset
+	local weld = Instance.new("Weld")
+	weld.Part0 = head
+	weld.Part1 = part
+	weld.C0 = offset
+	weld.Parent = part
+	part.Parent = body
+end
+
+-- Zombie look: no face, two glowing red eyes, both arms stretched forward; a
+-- spitter also has a glowing green mouth. The arms are raised by turning the
+-- shoulder joints' resting pose (JointPose), so the walk animation and the
+-- client's swipe still play on top of it.
+local function makeZombie(body: Model, kind: string)
 	local head = body:FindFirstChild("Head")
 	if head and head:IsA("BasePart") then
 		local face = head:FindFirstChild("face")
@@ -185,24 +242,10 @@ local function makeZombie(body: Model)
 			face:Destroy()
 		end
 		for _, x in { -0.22, 0.22 } do
-			local eye = Instance.new("Part")
-			eye.Name = "Eye"
-			eye.Shape = Enum.PartType.Ball
-			eye.Size = Vector3.new(0.22, 0.22, 0.22)
-			eye.Color = ZOMBIE_EYES
-			eye.Material = Enum.Material.Neon
-			eye.Massless = true
-			eye.CanCollide = false
-			eye.CanQuery = false
-			eye.CanTouch = false
-			local offset = CFrame.new(x, 0.1, -head.Size.Z / 2)
-			eye.CFrame = head.CFrame * offset
-			local weld = Instance.new("Weld")
-			weld.Part0 = head
-			weld.Part1 = eye
-			weld.C0 = offset
-			weld.Parent = eye
-			eye.Parent = body
+			addFacePart(body, head, "Eye", Vector3.new(0.22, 0.22, 0.22), ZOMBIE_EYES, CFrame.new(x, 0.1, -head.Size.Z / 2))
+		end
+		if kind == "Spitter" then
+			addFacePart(body, head, "Mouth", Vector3.new(0.4, 0.4, 0.4), ACID_COLOR, CFrame.new(0, -0.3, -head.Size.Z / 2))
 		end
 	end
 	for _, jointName in { "LeftShoulder", "RightShoulder" } do
@@ -218,15 +261,16 @@ end
 
 -- One finished body per team and type, built once and cloned for every spawn.
 local function buildTemplate(team: string, stats: MinionStats): Model
-	local zombie = stats.kind == "Zombie"
+	local zombie = team == ZOMBIES
 	local color = TEAM_COLORS[team] or Color3.new(0.5, 0.5, 0.5)
+	local look = ZOMBIE_LOOKS[stats.kind] or ZOMBIE_LOOKS.Zombie
 	local description = Instance.new("HumanoidDescription")
-	description.HeadColor = if zombie then ZOMBIE_SKIN else color
-	description.TorsoColor = if zombie then ZOMBIE_SHIRT else color
-	description.LeftArmColor = if zombie then ZOMBIE_SKIN else color
-	description.RightArmColor = if zombie then ZOMBIE_SKIN else color
-	description.LeftLegColor = if zombie then ZOMBIE_LEGS else color
-	description.RightLegColor = if zombie then ZOMBIE_LEGS else color
+	description.HeadColor = if zombie then look.skin else color
+	description.TorsoColor = if zombie then look.shirt else color
+	description.LeftArmColor = if zombie then look.skin else color
+	description.RightArmColor = if zombie then look.skin else color
+	description.LeftLegColor = if zombie then look.legs else color
+	description.RightLegColor = if zombie then look.legs else color
 	local body = Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
 	body.Name = team .. stats.kind
 	-- Remove any built-in scripts (such as the default Animate script) so only
@@ -237,7 +281,7 @@ local function buildTemplate(team: string, stats: MinionStats): Model
 		end
 	end
 	if zombie then
-		makeZombie(body)
+		makeZombie(body, stats.kind)
 	elseif stats.kind == "Archer" then
 		addBow(body)
 	else
@@ -279,17 +323,23 @@ local function buildTemplate(team: string, stats: MinionStats): Model
 	body:SetAttribute("Team", team)
 	body:SetAttribute("MaxHealth", stats.maxHealth)
 	body:SetAttribute("Health", stats.maxHealth)
-	body:ScaleTo(MinionConfig.Scale) -- 1 = player size
+	body:ScaleTo(MinionConfig.Scale * (stats.scale or 1)) -- 1 = player size
 	return body
 end
 
 local templates: { [string]: Model } = {}
-for team, wave in MinionConfig.Waves do
-	for _, stats in wave do
-		if not templates[team .. stats.kind] then
-			templates[team .. stats.kind] = buildTemplate(team, stats)
-		end
+local function addTemplate(team: string, stats: MinionStats)
+	if not templates[team .. stats.kind] then
+		templates[team .. stats.kind] = buildTemplate(team, stats)
 	end
+end
+for team, group in MinionConfig.Groups do
+	for _, stats in group do
+		addTemplate(team, stats)
+	end
+end
+for _, variant in MinionConfig.ZombieVariants do
+	addTemplate(ZOMBIES, variant.stats)
 end
 
 local function loadTrack(humanoid: Humanoid, animationId: string, looped: boolean): AnimationTrack
@@ -311,7 +361,9 @@ end
 
 -- Spawn markers. Each names its "Source" structure (our inhibitor, or a zombie
 -- core); the marker stops spawning once that structure falls.
-type SpawnPoint = { marker: BasePart, team: string, source: Instance? }
+-- ringMin/ringMax: zombie groups appear on this ring around the marker
+-- (default: the Zombie Core's ring from Config).
+type SpawnPoint = { marker: BasePart, team: string, source: Instance?, ringMin: number?, ringMax: number? }
 local spawnPoints: { SpawnPoint } = {}
 for _, item in arena:GetDescendants() do
 	local team = item:GetAttribute("Team")
@@ -385,7 +437,8 @@ CombatService.Died:Connect(function(target: Instance)
 end)
 
 -- Which field a new unit follows. Zombies pick an opening at random, weighted
--- toward shorter walks (1 / distance^2), so both spawn cores feed both openings.
+-- toward shorter walks from their rally point (1 / distance^2), so zombies
+-- rallying on one side mostly use that side's opening, but not always.
 local function pickField(team: string, start: Vector3): string
 	if team ~= ZOMBIES then
 		return "ToZombies"
@@ -422,6 +475,9 @@ local function strengthOf(team: string): number
 	if empowered[team] then
 		bonus += MinionConfig.BarracksBonus
 	end
+	if team == ZOMBIES then
+		bonus += ZombieEvents.strengthBonus() -- Zombies Evolve
+	end
 	return 1 + bonus
 end
 
@@ -435,14 +491,112 @@ local function scaledStats(base: MinionStats, multiplier: number): MinionStats
 	return table.freeze(stats)
 end
 
-local function spawnMinion(spawnPoint: SpawnPoint, baseStats: MinionStats)
-	local team = spawnPoint.team
-	local marker = spawnPoint.marker
-	local stats = scaledStats(baseStats, strengthOf(team))
+local function upgradedStats(team: string, base: MinionStats): MinionStats
+	return BaseUpgradeRules.applyMods(base, BaseUpgrades.unitMods(team, base.kind))
+end
+
+-- Something was bought (or everything reset): living soldiers get their new
+-- stats; a change in max health keeps the same share of their health.
+local function restat(minion: Minion)
+	minion.stats = upgradedStats(minion.team, minion.base)
+	local newMax = minion.stats.maxHealth
+	local oldMax = minion.model:GetAttribute("MaxHealth")
+	local health = minion.model:GetAttribute("Health")
+	if type(oldMax) == "number" and oldMax > 0 and type(health) == "number" and health > 0 and newMax ~= oldMax then
+		minion.model:SetAttribute("MaxHealth", newMax)
+		minion.model:SetAttribute("Health", math.max(math.round(health / oldMax * newMax), 1))
+	end
+end
+
+BaseUpgrades.Changed:Connect(function()
+	for _, minion in alive do
+		restat(minion)
+	end
+end)
+
+-- Zombies Evolve: living zombies get the new strength too (keeping their
+-- health share); new ones spawn with it (strengthOf).
+ZombieEvents.Strengthened:Connect(function(old: number, new: number)
+	local now = strengthOf(ZOMBIES)
+	local ratio = now / (now - (new - old))
+	for _, minion in alive do
+		if minion.team == ZOMBIES then
+			minion.base = scaledStats(minion.base, ratio)
+			restat(minion)
+		end
+	end
+end)
+
+-- Cleave / Volley upgrades: part of a hit also lands on enemy units near the target.
+local function splash(team: string, kind: string, attacker: Model, target: Instance, damage: number)
+	local mods = BaseUpgrades.unitMods(team, kind)
+	local targetRoot = if target:IsA("Model") then target:FindFirstChild("HumanoidRootPart") else nil
+	if mods.splashShare <= 0 or not (targetRoot and targetRoot:IsA("BasePart")) then
+		return
+	end
+	local centre = targetRoot.Position
+	local hits = 0
+	for _, other in alive do
+		if hits >= mods.splashTargets then
+			return
+		end
+		if other.model ~= target and other.team ~= team and CombatService.isAlive(other.model) then
+			local offset = other.root.Position - centre
+			if Vector3.new(offset.X, 0, offset.Z).Magnitude <= mods.splashRadius then
+				CombatService.applyDamage(other.model, math.round(damage * mods.splashShare), attacker, team)
+				hits += 1
+			end
+		end
+	end
+end
+
+-- A random open spot from pick() (tried SPAWN_TRIES times), or nil.
+local function openSpot(pick: () -> Vector3): Vector3?
+	for _ = 1, SPAWN_TRIES do
+		local spot = pick()
+		if SwarmField.isOpen(spot) then
+			return spot
+		end
+	end
+	return nil
+end
+
+-- A random spot on the ground between minRadius and maxRadius of centre,
+-- evenly spread over that ring's area (not bunched toward its inner edge).
+-- Open ground if one is found, else any such spot.
+local function spotAround(centre: Vector3, minRadius: number, maxRadius: number): Vector3
+	local function pick(): Vector3
+		local angle = math.random() * 2 * math.pi
+		local radius = math.sqrt(minRadius ^ 2 + math.random() * (maxRadius ^ 2 - minRadius ^ 2))
+		return Vector3.new(centre.X + math.cos(angle) * radius, 0, centre.Z + math.sin(angle) * radius)
+	end
+	local spot = openSpot(pick) or pick()
+	return Vector3.new(spot.X, Landscape.heightAt(spot.X, spot.Z), spot.Z)
+end
+
+-- A zombie group's rally point: part of the way from its spawn toward our Base
+-- Core, shifted anywhere across the battlefield's width. Nil if none is found.
+local function rallyFor(start: Vector3): Vector3?
+	local baseCores = standingCores(DEFENDERS)()
+	if #baseCores == 0 then
+		return nil
+	end
+	local goal = baseCores[1].Position
+	return openSpot(function()
+		local share = MinionConfig.ZombieRallyMinShare
+			+ math.random() * (MinionConfig.ZombieRallyMaxShare - MinionConfig.ZombieRallyMinShare)
+		local x = start.X + (goal.X - start.X) * share
+		local z = (start.Z + goal.Z) / 2 + (math.random() * 2 - 1) * MinionConfig.ZombieRallyHalfWidth
+		return Vector3.new(x, 0, z)
+	end)
+end
+
+local function spawnMinion(team: string, baseStats: MinionStats, ground: Vector3, rally: Vector3?): Minion
+	local base = scaledStats(baseStats, strengthOf(team))
+	local stats = upgradedStats(team, base)
+	local start = ground + Vector3.new(0, 3, 0)
 	local direction = if team == DEFENDERS then 1 else -1
-	local angle, radius = math.random() * 2 * math.pi, math.sqrt(math.random()) * SPAWN_SCATTER
-	local start = marker.Position + Vector3.new(math.cos(angle) * radius, 3, math.sin(angle) * radius)
-	local facing = start + Vector3.new(direction, 0, 0)
+	local facing = if rally then Vector3.new(rally.X, start.Y, rally.Z) else start + Vector3.new(direction, 0, 0)
 
 	local model = templates[team .. stats.kind]:Clone()
 	model:PivotTo(CFrame.lookAt(start, facing))
@@ -458,8 +612,9 @@ local function spawnMinion(spawnPoint: SpawnPoint, baseStats: MinionStats)
 		humanoid = humanoid,
 		root = root,
 		team = team,
+		base = base,
 		stats = stats,
-		field = pickField(team, start),
+		field = pickField(team, rally or start),
 		wander = math.random() * 2 - 1,
 		expiresAt = os.clock() + MinionConfig.Lifetime,
 		walkTrack = loadTrack(humanoid, WALK_ANIMATION, true),
@@ -476,39 +631,88 @@ local function spawnMinion(spawnPoint: SpawnPoint, baseStats: MinionStats)
 		progressAt = os.clock(),
 		unstickUntil = 0,
 		lastTarget = nil,
+		rally = rally,
+		guard = nil,
+		guardPoint = nil,
 	}
 	minion.turn.CFrame = root.CFrame.Rotation
 	minion.idleTrack:Play()
-	if stats.kind ~= "Zombie" then -- zombies keep both arms out instead of holding a weapon
+	if team ~= ZOMBIES then -- zombies keep both arms out instead of holding a weapon
 		loadTrack(humanoid, TOOL_HOLD_ANIMATION, true):Play()
 	end
 	table.insert(alive, minion)
 	byModel[model] = minion
+	return minion
 end
 
--- Spawns one wave at every spawn marker whose source still stands, never
--- exceeding the unit cap. Units are added one wave slot at a time across all
--- markers, so if the cap is hit no spawn point is left empty; the team that
--- goes first alternates.
-local longestWave = 0
-for _, wave in MinionConfig.Waves do
-	longestWave = math.max(longestWave, #wave)
+local function aliveCount(team: string): number
+	local count = 0
+	for _, minion in alive do
+		if minion.team == team then
+			count += 1
+		end
+	end
+	return count
 end
-local firstTeam = DEFENDERS
-local function spawnWave()
-	local order: { string } = if firstTeam == DEFENDERS then { DEFENDERS, ZOMBIES } else { ZOMBIES, DEFENDERS }
-	firstTeam = order[2]
-	for index = 1, longestWave do
-		for _, team in order do
-			local stats = MinionConfig.Waves[team] and MinionConfig.Waves[team][index]
-			for _, spawnPoint in spawnPoints do
-				if stats and spawnPoint.team == team and spawnPoint.source and CombatService.isAlive(spawnPoint.source) then
-					if #alive >= MinionConfig.MaxAlive then
-						return
-					end
-					spawnMinion(spawnPoint, stats)
-				end
+
+-- One group from one spawn marker. Our soldiers appear scattered around their
+-- marker. A zombie group appears together at one random spot on the ring
+-- around the zombie core and shares a rally point (each zombie aiming a little
+-- off it), so the field fills with separate clusters. Spawns only what fits
+-- under the team's cap; the rest is dropped (no backlog).
+local function spawnGroup(spawnPoint: SpawnPoint, group: { MinionStats })
+	local team = spawnPoint.team
+	local room = (MinionConfig.MaxAlive[team] or 0) - aliveCount(team)
+	if room <= 0 then
+		return
+	end
+	local marker = spawnPoint.marker.Position
+	local zombies = team == ZOMBIES
+	local centre = if zombies
+		then spotAround(
+			marker,
+			spawnPoint.ringMin or MinionConfig.ZombieSpawnMinRadius,
+			spawnPoint.ringMax or MinionConfig.ZombieSpawnMaxRadius
+		)
+		else marker
+	local groupRally = if zombies then rallyFor(centre) else nil
+	local scatter = if zombies then MinionConfig.ZombieGroupScatter else SPAWN_SCATTER
+	for index = 1, math.min(#group, room) do
+		local rally = if groupRally then spotAround(groupRally, 0, MinionConfig.ZombieRallyJitter) else nil
+		spawnMinion(team, group[index], spotAround(centre, 0, scatter), rally)
+	end
+end
+
+-- A zombie group slot: maybe a variant (ZombieVariants chances, in order).
+local function rollVariant(stats: MinionStats): MinionStats
+	local roll = math.random()
+	for _, variant in MinionConfig.ZombieVariants do
+		if roll < variant.chance then
+			return variant.stats
+		end
+		roll -= variant.chance
+	end
+	return stats
+end
+
+-- Every standing spawn marker of a team sends its group; our barracks add
+-- their Reinforcements upgrades, zombie slots may become variants.
+local function spawnTeam(team: string)
+	local group: { MinionStats } = table.clone(MinionConfig.Groups[team] or {})
+	if team == ZOMBIES then
+		for index, stats in group do
+			group[index] = rollVariant(stats)
+		end
+	elseif team == DEFENDERS then
+		for _, extra in { MinionConfig.Melee, MinionConfig.Archer } do
+			for _ = 1, BaseUpgrades.unitMods(DEFENDERS, extra.kind).extraPerGroup do
+				table.insert(group, extra)
 			end
+		end
+	end
+	for _, spawnPoint in spawnPoints do
+		if spawnPoint.team == team and spawnPoint.source and CombatService.isAlive(spawnPoint.source) then
+			spawnGroup(spawnPoint, group)
 		end
 	end
 end
@@ -730,6 +934,67 @@ local function faceToward(minion: Minion, point: Vector3)
 	end
 end
 
+-- Area hit (spitter acid): damage to every unit, hero and attackable
+-- building of the other side within radius of centre (buildings measured to
+-- their side).
+local function areaHit(centre: Vector3, radius: number, damage: number, attacker: Model, team: string)
+	for _, other in alive do
+		if other.team ~= team and planarDistance(other.root.Position, centre) <= radius then
+			CombatService.applyDamage(other.model, damage, attacker, team)
+		end
+	end
+	for _, player in Players:GetPlayers() do
+		local hero = player.Character
+		local heroRoot = hero and hero:FindFirstChild("HumanoidRootPart")
+		if
+			hero
+			and heroRoot
+			and heroRoot:IsA("BasePart")
+			and hero:GetAttribute("Kind") == "Hero"
+			and hero:GetAttribute("Team") ~= team
+			and planarDistance(heroRoot.Position, centre) <= radius
+		then
+			CombatService.applyDamage(hero, damage, attacker, team)
+		end
+	end
+	for _, structure in structures do
+		if
+			structure:GetAttribute("Team") ~= team
+			and CombatService.isAlive(structure)
+			and planarDistance(closestPointOn(structure, centre), centre) <= radius
+		then
+			CombatService.applyDamage(structure, damage, attacker, team)
+		end
+	end
+end
+
+-- Spitter: rears back (the swipe lunge, SpitWindup), then lobs a blob at the
+-- spot its target stands on at that moment. It lands after its flight and
+-- explodes there (owner 2026-10-22), hurting everything of ours within
+-- splashRadius, so a target that moves away in time dodges it. A spitter
+-- killed or stunned before the blob leaves its mouth never spits.
+local function spit(minion: Minion, target: Instance, aimPoint: Vector3)
+	local windup = MinionConfig.SpitWindup
+	local radius = minion.stats.splashRadius or 0
+	local damage = minion.stats.damage
+	local team, spitter, spitterRoot = minion.team, minion.model, minion.root
+	swingEvent:FireAllClients(spitter, windup)
+	task.delay(windup, function()
+		if not CombatService.isAlive(spitter) or UnitEffects.isStunned(spitter) then
+			return
+		end
+		local head = spitter:FindFirstChild("Head")
+		local from = if head and head:IsA("BasePart") then head.Position else spitterRoot.Position
+		local point = targetPoint(target, from) or aimPoint
+		local landing = Vector3.new(point.X, Landscape.heightAt(point.X, point.Z), point.Z)
+		local flightTime = (landing - from).Magnitude / MinionConfig.AcidSpeed
+		acidEvent:FireAllClients(spitter, from, landing, flightTime, radius)
+		task.delay(flightTime, function()
+			areaHit(landing, radius, damage, spitter, team)
+		end)
+	end)
+end
+
 -- Hits the target (an enemy minion or structure) at aimPoint. The server decides
 -- the hit; the swing animation is only for show. The minion is already turning
 -- to face the target (see updateMinion).
@@ -740,14 +1005,21 @@ local function attack(minion: Minion, target: Instance, aimPoint: Vector3, now: 
 		minion.structure = target -- structure lock: keep hitting it until it falls
 	end
 
+	if minion.stats.kind == "Spitter" then
+		spit(minion, target, aimPoint)
+		return
+	end
+
 	if minion.stats.kind ~= "Archer" then
-		if minion.stats.kind == "Zombie" then
+		if minion.team == ZOMBIES then
 			-- Hand swipe: every client plays it; the hit lands when the claw comes
 			-- down. A zombie killed mid-swing never lands it.
 			-- The target must still be within reach when the claw lands, so a
 			-- player who steps back during the swing dodges it.
-			local hitDelay = MinionConfig.ZombieSwipeHitDelay
-			local damage, team, zombie, zombieRoot = minion.stats.damage, minion.team, minion.model, minion.root
+			local hitDelay = if minion.stats.kind == "Brute" then MinionConfig.BruteSmashHitDelay else MinionConfig.ZombieSwipeHitDelay
+			local damage = minion.stats.damage
+			local team, zombie, zombieRoot = minion.team, minion.model, minion.root
+			local knockback = minion.stats.knockback
 			local reach = minion.stats.attackRange + HOLD_SLACK
 			swingEvent:FireAllClients(zombie, hitDelay)
 			task.delay(hitDelay, function()
@@ -757,11 +1029,17 @@ local function attack(minion: Minion, target: Instance, aimPoint: Vector3, now: 
 				local point = targetPoint(target, zombieRoot.Position)
 				if point and planarDistance(point, zombieRoot.Position) <= reach then
 					CombatService.applyDamage(target, damage, zombie, team)
+					-- Brute: throws one of our soldiers back (not heroes or buildings).
+					local victim = byModel[target]
+					if knockback and victim and victim.team ~= team and CombatService.isAlive(target) then
+						UnitEffects.knockback(victim.model, zombieRoot.Position, knockback, MinionConfig.KnockbackStun)
+					end
 				end
 			end)
 			return
 		end
 		CombatService.applyDamage(target, minion.stats.damage, minion.model, minion.team)
+		splash(minion.team, minion.stats.kind, minion.model, target, minion.stats.damage)
 		if minion.slashTrack then
 			minion.slashTrack:Play(0.05)
 		end
@@ -781,6 +1059,7 @@ local function attack(minion: Minion, target: Instance, aimPoint: Vector3, now: 
 		end
 		task.delay(flightTime, function()
 			CombatService.applyDamage(target, damage, archer, team)
+			splash(team, "Archer", archer, target, damage)
 		end)
 	end)
 end
@@ -802,30 +1081,6 @@ local function separation(minion: Minion): Vector3
 		end
 	end
 	return push
-end
-
--- Where the swarm wants this unit to go when it has no enemy: downhill on its
--- flow field, bent sideways by its own slowly changing drift, and pushed apart
--- from its neighbours. Nil when it has arrived (or has no goal left).
-local function swarmStep(minion: Minion, push: Vector3, unsticking: boolean): Vector3?
-	local position = minion.root.Position
-	local flow = SwarmField.direction(minion.field, position)
-	if not flow then
-		return nil
-	end
-	local plain = position + flow * STEER_AHEAD
-	if unsticking then
-		return plain
-	end
-	minion.wander = math.clamp(minion.wander + (math.random() * 2 - 1) * WANDER_CHANGE, -1, 1)
-	local sideways = Vector3.new(-flow.Z, 0, flow.X)
-	local steer = flow + sideways * minion.wander * WANDER_WEIGHT + push * SEPARATION_WEIGHT
-	if steer.Magnitude < 0.05 then
-		return plain
-	end
-	local bent = position + steer.Unit * STEER_AHEAD
-	-- Drift or crowding must never steer a unit into a wall or structure.
-	return if SwarmField.clearLine(position, bent) then bent else plain
 end
 
 -- Detour searches left this tick (reset in updateAll), so a crowd hitting an
@@ -851,6 +1106,68 @@ local function approachDirection(minion: Minion, aimPoint: Vector3, now: number,
 	end
 	local toward = Vector3.new(goal.X - position.X, 0, goal.Z - position.Z)
 	return if toward.Magnitude > 0.05 then toward.Unit else Vector3.zero
+end
+
+-- A zombie on its way to its rally point: the direction there (around
+-- obstacles, like walking at an enemy). Nil, and the rally point is dropped,
+-- once it is reached or the zombie is already nearer the base than it is.
+local function rallyDirection(minion: Minion, now: number, unsticking: boolean): Vector3?
+	local rally = minion.rally
+	if not rally then
+		return nil
+	end
+	local position = minion.root.Position
+	if
+		planarDistance(position, rally) <= RALLY_ARRIVE
+		or SwarmField.distance(minion.field, position) <= SwarmField.distance(minion.field, rally)
+	then
+		minion.rally = nil
+		minion.detour = nil
+		return nil
+	end
+	local toward = approachDirection(minion, rally, now, unsticking)
+	return if toward.Magnitude > 0 then toward else nil
+end
+
+-- A nest guard with no enemy near walks back to its spot by the nest and
+-- waits there. Once the nest falls it joins the swarm (nil this tick).
+local function guardStep(minion: Minion, now: number, unsticking: boolean): Vector3?
+	local point = minion.guardPoint
+	if not (point and minion.guard and CombatService.isAlive(minion.guard)) then
+		minion.guard, minion.guardPoint = nil, nil
+		return nil
+	end
+	local position = minion.root.Position
+	if planarDistance(position, point) <= HOLD_SLACK * 2 then
+		return nil
+	end
+	local toward = approachDirection(minion, point, now, unsticking)
+	return position + toward * math.min(STEER_AHEAD, planarDistance(position, point))
+end
+
+-- Where the swarm wants this unit to go when it has no enemy: toward its rally
+-- point (zombies, at first), else downhill on its flow field; bent sideways by
+-- its own slowly changing drift, and pushed apart from its neighbours. Nil
+-- when it has arrived (or has no goal left).
+local function swarmStep(minion: Minion, push: Vector3, now: number, unsticking: boolean): Vector3?
+	local position = minion.root.Position
+	local flow = rallyDirection(minion, now, unsticking) or SwarmField.direction(minion.field, position)
+	if not flow then
+		return nil
+	end
+	local plain = position + flow * STEER_AHEAD
+	if unsticking then
+		return plain
+	end
+	minion.wander = math.clamp(minion.wander + (math.random() * 2 - 1) * WANDER_CHANGE, -1, 1)
+	local sideways = Vector3.new(-flow.Z, 0, flow.X)
+	local steer = flow + sideways * minion.wander * WANDER_WEIGHT + push * SEPARATION_WEIGHT
+	if steer.Magnitude < 0.05 then
+		return plain
+	end
+	local bent = position + steer.Unit * STEER_AHEAD
+	-- Drift or crowding must never steer a unit into a wall or structure.
+	return if SwarmField.clearLine(position, bent) then bent else plain
 end
 
 -- Stuck check: a unit that keeps trying to walk but covers less than
@@ -913,8 +1230,10 @@ local function updateMinion(minion: Minion, now: number)
 		end
 	else
 		minion.holding = false
-		minion.detour = nil
-		target = swarmStep(minion, push, unsticking)
+		if not minion.rally then
+			minion.detour = nil -- a rallying zombie keeps its detour around obstacles
+		end
+		target = if minion.guard then guardStep(minion, now, unsticking) else swarmStep(minion, push, now, unsticking)
 	end
 
 	if target then
@@ -949,12 +1268,88 @@ local function updateAll()
 	end
 end
 
-task.spawn(function()
-	task.wait(MinionConfig.FirstWaveDelay)
-	while true do
-		spawnWave()
-		task.wait(MinionConfig.WaveInterval)
+-- Continuous spawning: each team on its own clock, all match long.
+-- Continuous spawning: each team on its own clock, all match long. Zombie
+-- Surge (ZombieEvents) shortens the zombies' wait.
+for team, interval in MinionConfig.GroupInterval do
+	task.spawn(function()
+		task.wait(MinionConfig.FirstSpawnDelay)
+		while true do
+			spawnTeam(team)
+			task.wait(if team == ZOMBIES then interval / ZombieEvents.productionFactor() else interval)
+		end
+	end)
+end
+
+-- Zombie Nest (ZombieEvents): an extra zombie goal for our soldiers and an
+-- obstacle; its guards stand by it; it sends its own groups on its own clock
+-- until it falls.
+local NestConfig = Config.Events.Nest
+ZombieEvents.NestCreated:Connect(function(nest: BasePart)
+	table.insert(structures, nest)
+	cores[ZOMBIES] = cores[ZOMBIES] or {}
+	table.insert(cores[ZOMBIES], nest)
+	SwarmField.rebuild()
+	local centre = nest.Position
+	for index = 1, NestConfig.Guards do
+		local angle = (index - 1) / NestConfig.Guards * 2 * math.pi + math.pi -- first one on the base side
+		local point = centre + Vector3.new(math.cos(angle), 0, math.sin(angle)) * NestConfig.GuardRadius
+		local ground = spotAround(point, 0, 2)
+		local guard = spawnMinion(ZOMBIES, MinionConfig.Brute, ground, nil)
+		guard.guard, guard.guardPoint = nest, ground
 	end
+	local spawnPoint: SpawnPoint = {
+		marker = nest,
+		team = ZOMBIES,
+		source = nest,
+		ringMin = NestConfig.SpawnMinRadius,
+		ringMax = NestConfig.SpawnMaxRadius,
+	}
+	local group = table.create(NestConfig.GroupSize, MinionConfig.Zombie)
+	task.spawn(function()
+		while CombatService.isAlive(nest) do
+			local rolled: { MinionStats } = {}
+			for index, stats in group do
+				rolled[index] = rollVariant(stats)
+			end
+			spawnGroup(spawnPoint, rolled)
+			task.wait(NestConfig.GroupInterval / ZombieEvents.productionFactor())
+		end
+	end)
+end)
+
+-- Zombie Surge burst: extra zombies from the Zombie Core at once, in a few
+-- clusters (BURST_GROUP_SIZE each, variants possible) around its ring.
+ZombieEvents.BurstRequested:Connect(function(count: number)
+	for _, spawnPoint in spawnPoints do
+		if spawnPoint.team == ZOMBIES and spawnPoint.source and CombatService.isAlive(spawnPoint.source) then
+			local left = count
+			while left > 0 do
+				local group: { MinionStats } = {}
+				for index = 1, math.min(BURST_GROUP_SIZE, left) do
+					group[index] = rollVariant(MinionConfig.Zombie)
+				end
+				spawnGroup(spawnPoint, group)
+				left -= #group
+			end
+		end
+	end
+end)
+
+-- Developer panel (DevTools): spawn one unit of a known kind at a point.
+local UNITS_BY_KIND: { [string]: MinionStats } = {
+	Zombie = MinionConfig.Zombie,
+	Brute = MinionConfig.Brute,
+	Spitter = MinionConfig.Spitter,
+	Melee = MinionConfig.Melee,
+	Archer = MinionConfig.Archer,
+}
+UnitRequests.SpawnRequested:Connect(function(team: string, kind: string, position: Vector3)
+	local stats = UNITS_BY_KIND[kind]
+	if not stats or (team ~= DEFENDERS and team ~= ZOMBIES) or not templates[team .. stats.kind] then
+		return
+	end
+	spawnMinion(team, stats, spotAround(position, 0, 1), nil)
 end)
 
 while true do

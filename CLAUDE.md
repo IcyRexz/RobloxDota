@@ -1,6 +1,6 @@
 # Claude project instructions
 
-You are implementing a PC-first cooperative fantasy base-defense action game for Roblox (1–5 warriors defend a walled compound and its Base Core against zombie waves; hub with a Dota-style hero roster, gear and persistent progression). Read `docs/01_BRIEF.md` through `docs/06_ACCEPTANCE_TESTS.md` before coding. The current user request and confirmed decisions outrank these defaults.
+You are implementing a PC-first cooperative fantasy base-defense action game for Roblox (1–5 warriors defend a walled compound and its Base Core against zombie waves; hub with three classes (Mage, Archer, Warrior), gear and persistent progression). Read `docs/01_BRIEF.md` through `docs/06_ACCEPTANCE_TESTS.md` before coding. The current user request and confirmed decisions outrank these defaults.
 
 Genre switch (owner decision 2026-10-20): the earlier mobile-first 1v1 MOBA is archived in `docs/archive/moba/` (design, task log, decisions). Its code in `src/` is being reused; `docs/03_TASKS.md` says which file feeds which task. Archived docs are history, not rules.
 
@@ -21,7 +21,7 @@ Genre switch (owner decision 2026-10-20): the earlier mobile-first 1v1 MOBA is a
 ## Code conventions
 Use `--!strict`, descriptive service/controller names, immutable public config and server-only mutable state. Keep remote schemas small/exact, reject NaN/infinity and oversized numbers, rate-limit before expensive work, use server time for cooldowns, and invalidate delayed callbacks by mission epoch/character generation. Clean every event connection and spawned instance you own. DataStores are allowed for persistent progression only, following the rules in docs/05_ARCHITECTURE.md. No external HTTP, monetization or plugin dependencies unless later explicitly required.
 
-Attack and movement animations follow the two approved patterns in `docs/04_CONTROLS_ANIMATIONS.md` ("Standard way to animate attacks"): client-side joint poses through `src/shared/JointPose.luau` triggered by a server event (zombie bite, archer draw), or Roblox default animation tracks played by the server (sword swing). Never edit `Motor6D.C0` directly.
+Attack and movement animations follow the three approved patterns in `docs/04_CONTROLS_ANIMATIONS.md` ("Standard way to animate attacks"): client-side joint poses through `src/shared/JointPose.luau` triggered by a server event (zombie bite, archer draw); a per-frame rotation added on top of the animation with `JointPose.addRotation` from PreSimulation, for joints the animations hide (Brute smash, owner 2026-10-22); or Roblox default animation tracks played by the server (sword swing). Never edit `Motor6D.C0` directly.
 
 All UI follows the design system in `docs/11_UI_DESIGN.md` (owner decision 2026-10-21): read fonts, colours, radii and bar sizes from `src/shared/UiTheme.luau`; never hard-code them in UI scripts.
 

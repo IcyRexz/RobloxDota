@@ -3,13 +3,15 @@
 -- (docs/11_UI_DESIGN.md, values from UiTheme):
 --  * bottom centre, your own hero: a level ring, hero name and "current / max"
 --    above a thin health bar, a thin gold XP bar with "xp / next XP" beside it,
---    and four ability slots with cooldown covers. The basic attack is always
---    live; abilities 1-3 light up once their talent is taken (Has<Ability>).
+--    and the Mage's three ability slots (Bolt, Strike on Q, Teleport on E) with
+--    circular cooldown sweeps. Pips under the Bolt fill towards the next Arcane
+--    Resonance (the character's Resonance attribute) and turn gold when the
+--    next hit triggers it.
 --    Level and XP follow the server's Level / Xp / XpToNext Player attributes.
 --    The ring is quiet normally and turns gold with a soft pulsing glow only
---    while a talent pick is waiting (UpgradesPending > 0), with a gold "U" pill
---    above it; clicking the ring (or pressing U) opens the Character Menu
---    (CharacterMenu.client).
+--    while a mastery pick is waiting (MasteryPoints > 0), with a gold
+--    "MASTERY" pill above it; clicking the ring (or pressing U) opens the
+--    Character Menu (CharacterMenu.client).
 --  * over every other hero's head: their name above a thin health bar (green
 --    your side, red the enemy). Your own has none: the camera is first person.
 -- The health bars show a pale "recent damage" chunk that drains shortly after a hit.
@@ -24,6 +26,7 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local MageAbilities = require(ReplicatedStorage.Shared.MageAbilities)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local Font = UiTheme.Font
@@ -107,7 +110,7 @@ end
 -- [ring]  Zeus                     600 / 600
 --         ==================================   health (8 px)
 --         ------------                         xp (3 px, gold)
---         [BOLT] [ 1 ] [ 2 ] [ 3 ]             ability slots
+--         [BOLT] [ Q ] [ E ]                   ability slots
 
 local screen = Instance.new("ScreenGui")
 screen.Name = "HeroHud"
@@ -185,7 +188,7 @@ badgeButton.Size = UDim2.fromScale(1, 1)
 badgeButton.ZIndex = 3
 badgeButton.Parent = badge
 
--- "LEVEL UP" pill above the ring while a talent pick is waiting: a gold pill
+-- "MASTERY" pill above the ring while a mastery pick is waiting: a gold pill
 -- with a dark key chip showing U (opens the Character Menu), and "x2" when
 -- several picks are queued. It bobs gently so it is noticed without shouting.
 local pickHint = Instance.new("Frame")
@@ -231,14 +234,12 @@ pickHintText.AutomaticSize = Enum.AutomaticSize.X
 pickHintText.TextTruncate = Enum.TextTruncate.None
 pickHintText.TextColor3 = UiTheme.OnGold
 pickHintText.ZIndex = 5
-pickHintText.Text = "LEVEL UP"
+pickHintText.Text = "MASTERY"
 local pickBob = TweenService:Create(
 	pickHint,
 	TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
 	{ Position = UDim2.fromOffset(0, -space(3)) }
 )
-pickHintText.TextColor3 = UiTheme.OnGold
-pickHintText.Text = "U  talent"
 
 -- Name and health numbers above the bar.
 local block = Instance.new("Frame")
@@ -283,9 +284,9 @@ local function refreshXp()
 	levelText.Text = tostring(math.max(level, 1))
 	xpBar.fill.Size = UDim2.fromScale(if toNext and toNext > 0 then math.clamp(xp / toNext, 0, 1) else 1, 1)
 	xpText.Text = if toNext and toNext > 0 then `{xp} / {toNext} XP` else "MAX"
-	local picks = readWholeNumber("UpgradesPending") or 0
+	local picks = readWholeNumber("MasteryPoints") or 0
 	local waiting = picks > 0
-	pickHintText.Text = if picks > 1 then `LEVEL UP  x{picks}` else "LEVEL UP"
+	pickHintText.Text = if picks > 1 then `MASTERY  x{picks}` else "MASTERY"
 	if waiting ~= pickHint.Visible then
 		pickHint.Visible = waiting
 		if waiting then
@@ -305,10 +306,8 @@ type Slot = {
 	button: TextButton,
 	caption: TextLabel,
 	setCooldown: (number, string) -> (), -- share left (0..1), seconds text
-	readyAttribute: string?,
-	unlockAttribute: string?, -- Player attribute that unlocks it (nil = always on)
-	label: string, -- caption once unlocked
-	key: string,
+	action: string, -- the server action: <action>ReadyAt / <action>Cooldown on the character
+	defaultCooldown: number, -- until the server has sent the length
 }
 
 local slotRow = Instance.new("Frame")
@@ -325,12 +324,13 @@ layout.Parent = slotRow
 
 local slots: { Slot } = {}
 
-local function addSlot(name: string, label: string, key: string, order: number, readyAttribute: string?, unlockAttribute: string?)
+local function addSlot(name: string, label: string, key: string, order: number, action: string, defaultCooldown: number): TextButton
 	local button = Instance.new("TextButton")
 	button.Name = name
 	button.LayoutOrder = order
 	button.Size = UDim2.fromOffset(SLOT_SIZE, SLOT_SIZE)
 	button.BackgroundColor3 = UiTheme.Surface
+	button.BackgroundTransparency = UiTheme.SurfaceTransparency
 	button.Text = ""
 	button.Parent = slotRow
 	UiTheme.corner(button)
@@ -341,9 +341,14 @@ local function addSlot(name: string, label: string, key: string, order: number, 
 	keyText.Text = key
 
 	local caption = UiTheme.text(button, 10, Font.Heavy)
-	caption.Position = UDim2.fromOffset(0, 6)
-	caption.Size = UDim2.fromScale(1, 1)
+	caption.Position = UDim2.fromOffset(2, 6)
+	caption.Size = UDim2.new(1, -4, 1, 0)
 	caption.TextXAlignment = Enum.TextXAlignment.Center
+	caption.TextScaled = true -- long names shrink to fit the slot
+	caption.Text = label
+	local captionLimit = Instance.new("UITextSizeConstraint")
+	captionLimit.MaxTextSize = 10
+	captionLimit.Parent = caption
 
 	-- Cooldown: a dark wedge that sweeps away like a clock, seconds in the centre.
 	local setCooldown = UiTheme.radialCover(button)
@@ -353,49 +358,73 @@ local function addSlot(name: string, label: string, key: string, order: number, 
 		button = button,
 		caption = caption,
 		setCooldown = setCooldown,
-		readyAttribute = readyAttribute,
-		unlockAttribute = unlockAttribute,
-		label = label,
-		key = key,
+		action = action,
+		defaultCooldown = defaultCooldown,
 	})
+	return button
 end
 
-addSlot("Attack", "BOLT", "LMB", 1, "PulseReadyAt", nil)
-addSlot("Skill1", "STRIKE", "1", 2, "StrikeReadyAt", "HasStrike")
-addSlot("Skill2", "DASH", "2", 3, "DashReadyAt", "HasDash")
-addSlot("Ultimate", "BALL", "3", 4, "BallReadyAt", "HasBall")
+local Skills = Config.Hero.Skills
+local boltSlot = addSlot("Attack", "BOLT", "LMB", 1, "Pulse", Config.Hero.Pulse.Cooldown)
+addSlot("Skill1", "STRIKE", "Q", 2, "Strike", Skills.Strike.Cooldown)
+addSlot("Skill2", "TELEPORT", "E", 3, "Teleport", Skills.Teleport.Cooldown)
 
--- Locked slots are dim and show only their key; unlocked ones show their name.
-local function refreshSlots()
-	for _, slot in slots do
-		local unlocked = slot.unlockAttribute == nil or player:GetAttribute(slot.unlockAttribute) == true
-		slot.button.BackgroundTransparency = if unlocked then UiTheme.SurfaceTransparency else 0.65
-		slot.button.AutoButtonColor = unlocked
-		slot.button.Active = unlocked
-		slot.caption.Text = if unlocked then slot.label else slot.key
-		slot.caption.TextTransparency = if unlocked then Strength.Value else Strength.Faint
+-- Arcane Resonance pips along the bottom of the Bolt slot: one per hit needed
+-- before the bonus hit; all gold = the next hit triggers it.
+local PIP_SIZE = 4
+local pipRow = Instance.new("Frame")
+pipRow.Name = "Resonance"
+pipRow.AnchorPoint = Vector2.new(0.5, 1)
+pipRow.Position = UDim2.new(0.5, 0, 1, -3)
+pipRow.Size = UDim2.new(1, 0, 0, PIP_SIZE)
+pipRow.BackgroundTransparency = 1
+pipRow.ZIndex = 5
+pipRow.Parent = boltSlot
+local pipLayout = Instance.new("UIListLayout")
+pipLayout.FillDirection = Enum.FillDirection.Horizontal
+pipLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+pipLayout.Padding = UDim.new(0, 3)
+pipLayout.Parent = pipRow
+local pips: { Frame } = {}
+
+local function hasMastery(id: string): boolean
+	return player:GetAttribute("Mastery" .. id) == true
+end
+
+local function refreshPassive(character: Model?)
+	local every = MageAbilities.resonanceEvery(hasMastery)
+	local needed = every - 1
+	while #pips < needed do
+		local pip = Instance.new("Frame")
+		pip.Size = UDim2.fromOffset(PIP_SIZE, PIP_SIZE)
+		pip.BorderSizePixel = 0
+		pip.ZIndex = 5
+		pip.Parent = pipRow
+		UiTheme.corner(pip, PIP_SIZE // 2)
+		table.insert(pips, pip)
+	end
+	local hits = if character then character:GetAttribute("Resonance") else nil
+	local count = if type(hits) == "number" then math.clamp(math.floor(hits), 0, needed) else 0
+	local charged = count >= needed
+	for index, pip in pips do
+		pip.Visible = index <= needed
+		pip.BackgroundColor3 = if charged then UiTheme.Gold else UiTheme.Text
+		pip.BackgroundTransparency = if index <= count then 0 else 0.7
 	end
 end
-refreshSlots()
-player.AttributeChanged:Connect(refreshSlots)
 
--- Cooldown covers follow the server's "<Action>ReadyAt" attributes (server time).
-local Skills = Config.Hero.Skills
-local cooldownLengths: { [string]: number } = {
-	PulseReadyAt = Config.Hero.Pulse.Cooldown,
-	StrikeReadyAt = Skills.Strike.Cooldown,
-	DashReadyAt = Skills.Dash.Cooldown,
-	BallReadyAt = Skills.Ball.Cooldown,
-}
+-- Cooldown sweeps follow the server's <Action>ReadyAt (server time) and
+-- <Action>Cooldown (the full length, which masteries can change) attributes.
 RunService.RenderStepped:Connect(function()
 	local character = player.Character
 	local time = Workspace:GetServerTimeNow()
+	refreshPassive(character)
 	for _, slot in slots do
-		local attribute = slot.readyAttribute
-		local readyAt = if character and attribute then character:GetAttribute(attribute) else nil
+		local readyAt = if character then character:GetAttribute(slot.action .. "ReadyAt") else nil
+		local sentLength = if character then character:GetAttribute(slot.action .. "Cooldown") else nil
 		local left = if type(readyAt) == "number" then readyAt - time else 0
-		local length = if attribute then cooldownLengths[attribute] else nil
-		if left > 0 and length then
+		local length = if type(sentLength) == "number" and sentLength > 0 then sentLength else slot.defaultCooldown
+		if left > 0 then
 			slot.setCooldown(left / length, if left >= 1 then tostring(math.ceil(left)) else string.format("%.1f", left))
 		else
 			slot.setCooldown(0, "")

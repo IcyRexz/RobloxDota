@@ -16,8 +16,10 @@ local Landscape = require(script.Parent.Landscape)
 local SwarmField = {}
 
 local CELL = 4 -- studs per grid cell
-local X_MIN, X_MAX = -160, 180 -- area covered by the grid (the base is at -X)
-local Z_MIN, Z_MAX = -132, 132
+-- Area covered by the grid: the base is at -X, the zombie core at +X; it stops
+-- short of the forest belt along the east, north and south edges.
+local X_MIN, X_MAX = -160, 252
+local Z_MIN, Z_MAX = -188, 188
 local CLEARANCE = 2 -- studs units keep from walls and structures (full-size bodies)
 local GOAL_MARGIN = 6 -- cells within this many studs of a goal's side count as "arrived"
 local BLOCK_HEIGHT = 1.5 -- parts whose top is this far above the ground under them are obstacles (floors are not)
@@ -314,6 +316,12 @@ function SwarmField.waypointToward(from: Vector3, to: Vector3): Vector3?
 		best = centre
 	end
 	return best
+end
+
+-- True if a unit could stand here: inside the grid and clear of walls and structures.
+function SwarmField.isOpen(position: Vector3): boolean
+	local ix, iz = cellOf(position)
+	return inGrid(ix, iz) and not blocked[index(ix, iz)]
 end
 
 -- Walking distance (in cells) from a position to the field's goal; huge if unreachable.
