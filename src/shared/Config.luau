@@ -89,7 +89,7 @@ local ZOMBIE: MinionStats = table.freeze({
 	attackRange = 5,
 	attackInterval = 1,
 	speed = 8,
-	aggroRange = 14,
+	aggroRange = 20, -- owner 2026-10-23: was 14
 })
 
 -- Zombie variants (owner 2026-10-21), mixed into the zombie groups
@@ -105,7 +105,7 @@ local BRUTE: MinionStats = table.freeze({
 	attackRange = 10, -- owner 2026-10-22: 6, then 12, now 10
 	attackInterval = 1,
 	speed = 5.5,
-	aggroRange = 14,
+	aggroRange = 20, -- owner 2026-10-23: was 14
 	scale = 1.5,
 	knockback = 56, -- owner 2026-10-22: 28, tripled to 84, then 2/3 of that
 })
@@ -123,7 +123,7 @@ local SPITTER: MinionStats = table.freeze({
 	attackRange = 20,
 	attackInterval = 2.2,
 	speed = 7,
-	aggroRange = 22, -- beyond its range so it stops at range instead of walking in
+	aggroRange = 28, -- beyond its range so it stops at range instead of walking in (owner 2026-10-23: was 22)
 	splashRadius = 6,
 })
 
@@ -219,13 +219,13 @@ local Config = table.freeze({
 		-- Studs from the workbench a purchase is accepted (the prompt opens at 10).
 		WorkbenchRange = 16,
 		-- The menu's upgrade categories, in order (owner 2026-10-21: Buildings,
-		-- Melee Units, Archers; the Base Core's own levels were folded into
+		-- Warriors (was Melee Units, owner 2026-10-22), Archers; the Base Core's own levels were folded into
 		-- Buildings). `unit` = the soldiers a category improves (Config.Minion
 		-- kind; "" for Buildings). The ids MeleeBarracks / ArcherBarracks are kept
 		-- from when each category was a barracks.
 		Categories = table.freeze({
 			table.freeze({ id = "Buildings", name = "Buildings", icon = "🏰", unit = "" }),
-			table.freeze({ id = "MeleeBarracks", name = "Melee Units", icon = "⚔️", unit = "Melee" }),
+			table.freeze({ id = "MeleeBarracks", name = "Warriors", icon = "⚔️", unit = "Melee" }),
 			table.freeze({ id = "ArcherBarracks", name = "Archers", icon = "🏹", unit = "Archer" }),
 		}),
 		-- A 3x2 grid per category (owner 2026-10-21): row 1 survival, row 2
@@ -289,7 +289,24 @@ local Config = table.freeze({
 		-- 0.5 for the Mage). Heroes regenerate while alive, even in combat.
 		HealthRegen = 0.5,
 		WalkSpeed = 16,
-		RespawnTime = 5, -- seconds after death
+		-- Death and revive (owner 2026-10-23). At 0 health a hero is down: the
+		-- body lies where it fell and the player watches (grey screen) while
+		-- the respawn countdown runs: RespawnBase + RespawnPerLevel per level
+		-- above 1, at most RespawnMax seconds. Then they respawn at the pad with
+		-- full health. Before that, a living ally holding F for ReviveHold
+		-- seconds within ReviveDistance studs of the body stands them back up
+		-- where they fell with ReviveHealthShare of their max health. Each
+		-- player can be revived once per match. Coming back either way gives
+		-- Protection seconds in which they take no damage.
+		Death = table.freeze({
+			RespawnBase = 5,
+			RespawnPerLevel = 1,
+			RespawnMax = 20,
+			ReviveHold = 3,
+			ReviveDistance = 6,
+			ReviveHealthShare = 0.3,
+			Protection = 2,
+		}),
 		-- Requests beyond this per second are dropped before any work is done.
 		MaxActionsPerSecond = 8,
 		-- Automatic growth every level after the first (no choices). Ability
@@ -438,8 +455,13 @@ local Config = table.freeze({
 		-- Our minions: a unit hit by an enemy unit or tower fights back, even if it
 		-- was hitting a structure, while the attacker stays within this many studs.
 		-- Larger than tower range (28) so towers shooting a unit get attacked back.
-		-- (Zombies never retaliate; they go for whatever is nearest.)
 		RetaliateRange = 32,
+		-- Zombies (owner 2026-10-23): a zombie that gets hit goes for whoever hit
+		-- it while they stay within this many studs (beyond the longest hero
+		-- ability range, 40). A nearer attacker can steal its aggro, but at most
+		-- once every ZombieAggroSwitchCooldown seconds.
+		ZombieChaseRange = 45,
+		ZombieAggroSwitchCooldown = 3,
 		-- Our minions: allies this close to a unit that gets hit join in on the attacker.
 		HelpRange = 10,
 		-- TEMPORARY, for simulation only: extra health and damage per team, so one

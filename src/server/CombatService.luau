@@ -5,6 +5,7 @@
 -- backdoor protection are added when hero damage exists.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
 
@@ -58,10 +59,17 @@ function CombatService.isLocked(target: Instance): boolean
 	return Targeting.isLocked(target, CombatService.isAlive)
 end
 
+-- Spawn protection: a hero just back from death takes no damage until the
+-- server time in its ProtectedUntil attribute (set by Heroes.server).
+local function isProtected(target: Instance): boolean
+	local untilTime = target:GetAttribute("ProtectedUntil")
+	return typeof(untilTime) == "number" and Workspace:GetServerTimeNow() < untilTime
+end
+
 -- Deals damage from an attacker to a target. attackerTeam is captured by the
 -- caller when the attack starts, so a delayed hit still knows its side.
 -- Returns the damage actually dealt (0 if the hit was refused: bad amount,
--- same team, already dead or locked).
+-- same team, already dead, locked or spawn-protected).
 function CombatService.applyDamage(target: Instance, amount: number, attacker: Instance, attackerTeam: string): number
 	if not isValidAmount(amount) then
 		return 0
@@ -69,7 +77,7 @@ function CombatService.applyDamage(target: Instance, amount: number, attacker: I
 	if target:GetAttribute("Team") == attackerTeam then
 		return 0
 	end
-	if not CombatService.isAlive(target) or CombatService.isLocked(target) then
+	if not CombatService.isAlive(target) or CombatService.isLocked(target) or isProtected(target) then
 		return 0
 	end
 

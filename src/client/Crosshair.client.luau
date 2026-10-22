@@ -76,3 +76,8 @@ local function refresh()
 end
 refresh()
 player:GetAttributeChangedSignal("AimTarget"):Connect(refresh)
+
+-- Hidden while your hero is down (DeathScreen.client sets this device's "Down").
+player:GetAttributeChangedSignal("Down"):Connect(function()
+	screen.Enabled = player:GetAttribute("Down") ~= true
+end)

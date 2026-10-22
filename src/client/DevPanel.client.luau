@@ -5,6 +5,7 @@
 --   DEV    +30 XP  +200 Gold          (amounts from Config.Dev)
 --   SPAWN  Zombie Brute Spitter Swordsman Archer   (Config.Dev.SpawnKinds)
 --   EVENT  Next event
+--   HERO   Die
 -- The camera locks the mouse in first person, so ` (backquote) frees it for
 -- clicking the panel (a Modal button) and locks it again. Shown only in
 -- Studio; each click asks the server (DevTools.server), which decides.
@@ -125,8 +126,11 @@ end
 local eventRow = row(3, "EVENT")
 button(eventRow, 1, "Next event", UiTheme.Text, "NextEvent")
 
+local heroRow = row(4, "HERO")
+button(heroRow, 1, "Die", UiTheme.Enemy, "Die")
+
 local hint = UiTheme.text(panel, UiTheme.TextSize.Caption, UiTheme.Font.Medium, UiTheme.Strength.Faint)
-hint.LayoutOrder = 4
+hint.LayoutOrder = 5
 hint.Size = UDim2.fromOffset(0, space(4))
 hint.AutomaticSize = Enum.AutomaticSize.X
 hint.TextTruncate = Enum.TextTruncate.None

@@ -119,6 +119,7 @@ type Minion = {
 	-- An enemy that drew this minion's aggro: an enemy minion that hit it, or an
 	-- enemy hero that hit one of its heroes. It fights back (see chooseTarget).
 	attacker: Instance?,
+	aggroLockedUntil: number, -- zombies: no switching to a nearer attacker before then
 	holding: boolean,
 	nextAttackAt: number,
 	detour: Vector3?, -- current waypoint around an obstacle toward its enemy
@@ -623,6 +624,7 @@ local function spawnMinion(team: string, baseStats: MinionStats, ground: Vector3
 		turn = root:FindFirstChild("Turn") :: AlignOrientation,
 		structure = nil,
 		attacker = nil,
+		aggroLockedUntil = 0,
 		holding = false,
 		nextAttackAt = 0,
 		detour = nil,
@@ -746,7 +748,40 @@ local function drawAggro(minion: Minion, attacker: Instance)
 	minion.structure = nil -- fighting back beats a structure lock
 end
 
--- Aggro for our minions (standard rules; zombies ignore it). Each one breaks
+-- Zombie aggro (owner 2026-10-23): a zombie hit by anything of ours (hero,
+-- soldier or tower) turns on that attacker. Hit again by a different attacker
+-- that is nearer than its current one, it switches, but at most once every
+-- ZombieAggroSwitchCooldown seconds so it does not flip back and forth.
+-- A zombie already standing and hitting something (owner 2026-10-23) keeps
+-- hitting it: being hit then changes nothing.
+local function zombieAggro(victim: Minion, attacker: Instance)
+	local now = os.clock()
+	local position = victim.root.Position
+	local current = victim.attacker
+	local currentPoint = if current and CombatService.isAlive(current) then targetPoint(current, position) else nil
+	if current == attacker then
+		return
+	end
+	local fighting = victim.lastTarget
+	if victim.holding and fighting and fighting ~= attacker and CombatService.isAlive(fighting) then
+		return
+	end
+	if currentPoint and planarDistance(currentPoint, position) <= MinionConfig.ZombieChaseRange then
+		local newPoint = targetPoint(attacker, position)
+		if
+			now < victim.aggroLockedUntil
+			or not newPoint
+			or planarDistance(newPoint, position) >= planarDistance(currentPoint, position)
+		then
+			return
+		end
+	end
+	victim.attacker = attacker
+	victim.lastTarget = attacker
+	victim.aggroLockedUntil = now + MinionConfig.ZombieAggroSwitchCooldown
+end
+
+-- Aggro for our minions (standard rules; zombies use zombieAggro). Each one breaks
 -- a structure lock:
 --  * retaliation: a unit damaged by an enemy unit or tower turns on that
 --    attacker and chases it while it stays within RetaliateRange
@@ -754,7 +789,11 @@ end
 --    already fighting back join in on the same attacker
 CombatService.Damaged:Connect(function(target: Instance, attacker: Instance, attackerTeam: string)
 	local victim = byModel[target]
-	if not (victim and attackerTeam ~= victim.team and victim.team ~= ZOMBIES and targetPoint(attacker, victim.root.Position)) then
+	if not (victim and attackerTeam ~= victim.team and targetPoint(attacker, victim.root.Position)) then
+		return
+	end
+	if victim.team == ZOMBIES then
+		zombieAggro(victim, attacker)
 		return
 	end
 	drawAggro(victim, attacker)
@@ -784,12 +823,21 @@ local function canHitStructure(minion: Minion, structure: BasePart): boolean
 		and not CombatService.isLocked(structure)
 end
 
--- Zombies (owner 2026-10-20): simply the nearest enemy within aggro range,
--- unit, player or attackable structure alike, measured to a structure's side.
--- No retaliation chase and no structure lock: hitting a zombie does not make
--- it follow you. The current target is kept unless another is clearly nearer.
+-- Zombies (owner 2026-10-20): the nearest enemy within aggro range, unit,
+-- player or attackable structure alike, measured to a structure's side. No
+-- structure lock. The current target is kept unless another is clearly nearer.
+-- Whatever last hit it (zombieAggro) comes first, while within ZombieChaseRange
+-- (owner 2026-10-23).
 local function nearestForZombie(minion: Minion): (Instance?, Vector3)
 	local position = minion.root.Position
+	local attacker = minion.attacker
+	if attacker and CombatService.isAlive(attacker) and not CombatService.isLocked(attacker) then
+		local point = targetPoint(attacker, position)
+		if point and planarDistance(point, position) <= MinionConfig.ZombieChaseRange then
+			return attacker, point
+		end
+	end
+	minion.attacker = nil
 	local best: Instance? = nil
 	local bestPoint = position
 	local bestDistance = minion.stats.aggroRange

@@ -19,13 +19,14 @@ Static checks (luau-lsp, selene, scratch `rojo build`) passed on 2026-10-21; not
 
 - [ ] 1.1 Output on start. **Expect:** `[Landscape] baked terrain found in the place; not rebuilding it`; `[Minions] zombie ...` joint line; no red errors or `warn` lines about heights.
 - [ ] 1.2 Spawn. **Expect:** you stand on the round raised SpawnPad, in first person, centre crosshair, no Roblox player list.
-- [ ] 1.3 HUD. **Expect:** bottom: level ring "1", name + health bar 500/500, thin gold XP bar "0 / 30 XP", slots BOLT / STRIKE / TELEPORT; Resonance pips; top right Gold 1000; minimap bottom right; party list top left.
+- [ ] 1.3 HUD. **Expect:** bottom, no box behind it, no name: navy level ring "1", chunky green health bar with "500 / 500" inside, gold XP bar with "0 / 30 XP" beside it, blue slots BOLT (LMB chip, Resonance pips along its bottom) / STRIKE (Q) / TELEPORT (E); BOLT turns gold when the next bolt triggers Resonance; all text white with a thin dark outline, holes in o / e / a stay open; top right Gold 1000; minimap bottom right; party list top left.
 - [ ] 1.4 Nature. **Expect:** pine trees stand on the hills (trunks touch the ground, not floating or buried), model rocks visible and not sunk out of sight, no green/grey see-through blocks.
 - [ ] 1.5 Fences. **Expect:** fence art along every base edge, no gaps, both front corners open.
 
 ## 2. Movement and camera
 
 - [ ] 2.1 WASD, jump (Space). **Expect:** smooth, jump works, cannot walk through fences, trees or rocks.
+- [ ] 2.1a Dev panel HERO Die (solo). **Expect:** the body lies down where you stood, grey screen with "YOU DIED" and "Respawn in 5" counting down, "You have fallen" popup on the right, crosshair gone, the mouse orbits the camera round the body and the wheel zooms, WASD/Space do nothing; at 0 you appear on the pad at full health in first person with colour back.
 - [ ] 2.2 Walk to the map edge. **Expect:** forest belt + invisible boundary stops you.
 
 ## 3. Lightning Bolt (left mouse)
@@ -49,8 +50,8 @@ Static checks (luau-lsp, selene, scratch `rojo build`) passed on 2026-10-21; not
 ## 5. Levels, growth, masteries (Character Menu, U)
 
 - [ ] 5.1 Any zombie death (by soldiers too). **Expect:** XP bar fills; at 30 XP level 2, `[HeroProgress] ... reached level 2` in Output, max health +20.
-- [ ] 5.2 Press U. **Expect:** Character Menu opens, mouse is free, left: abilities + Health Regen 0.5/s etc., right: 3x3 mastery grid all locked before level 5. Q/E/left click do nothing while it is open. U again closes it, first person returns.
-- [ ] 5.3 At level 5. **Expect:** gold "MASTERY" pill on the HUD; in the menu tiles are open; pick Chain Bolt. **Expect:** `took mastery ChainBolt` in Output, tile marked taken, pill gone; next bolt jumps to a second zombie for about half damage.
+- [ ] 5.2 Press U. **Expect:** Character Menu opens, mouse is free, left: abilities + Health Regen 0.5/s etc., right: 3x3 mastery grid all locked (grey) before level 5, with the info area under it (blocky window titled "Character", red X closes it). Q/E/left click do nothing while it is open. U again closes it, first person returns.
+- [ ] 5.3 At level 5. **Expect:** gold "MASTERY" pill on the HUD; in the menu tiles are open; click Chain Bolt (**Expect:** it only shows in the info area, nothing is picked), then press the gold PICK! button. **Expect:** `took mastery ChainBolt` in Output, tile marked taken, pill gone; next bolt jumps to a second zombie for about half damage.
 - [ ] 5.4 Take Thunderstorm (needs level 10, or use the fast setting). **Expect:** Strike leaves a storm hitting a random zombie in the area every 0.8 s for 4 s.
 - [ ] 5.5 Quick Blink. **Expect:** Teleport cooldown shows about 4.8 s.
 - [ ] 5.6 Vitality. **Expect:** max health +25% on the HUD and in the menu.
@@ -59,18 +60,18 @@ Static checks (luau-lsp, selene, scratch `rojo build`) passed on 2026-10-21; not
 
 ## 6. Base Upgrades (F at the Upgrade Workbench)
 
-- [ ] 6.1 Walk to the workbench. **Expect:** "Open Upgrades" prompt with key F (not E). Press F. **Expect:** menu with Buildings / Melee Units / Archers cards on the left, 3x2 tiles on the right, info area under the tiles.
-- [ ] 6.2 Buy Stone Walls (150). **Expect:** Gold 1000 -> 850, `[BaseUpgrades] ... bought StoneWalls`, tower max health +25% on its bar, tile shows owned.
-- [ ] 6.3 Buy Reinforcements (Melee). **Expect:** next wave spawns 5 swordsmen per barracks instead of 4; menu "Per barracks" number updates.
+- [ ] 6.1 Walk to the workbench. **Expect:** "Open Upgrades" prompt with key F (not E). Press F. **Expect:** blocky menu titled "Base Upgrades" on the gold rim (no icon) with a red X top right; Buildings / Warriors / Archers cards on the left; 3x2 tiles on the right showing name + orange "Improves" line + a small green "<cost> Gold" button; info area under the tiles with only the upgrade text (no cost line) and a green "<cost> Gold" button in its bottom-right corner. Clicking a category card shows that category in the info area. Clicking the X closes it.
+- [ ] 6.2 Buy Stone Walls (150). **Expect:** Gold 1000 -> 850, `[BaseUpgrades] ... bought StoneWalls`, tower max health +25% on its bar, tile turns green with a check; the info button says OWNED.
+- [ ] 6.3 Buy Reinforcements (Melee). **Expect:** the next group spawns 3 swordsmen per barracks instead of 2; menu "Per barracks" number updates.
 - [ ] 6.4 Buy Watchtowers. **Expect:** tower range ring larger (+6), towers shoot further.
-- [ ] 6.5 Spend down to under 150 Gold. **Expect:** unaffordable tiles look disabled, clicking them does nothing, Gold never goes negative.
+- [ ] 6.5 Spend down to under 150 Gold. **Expect:** the info button of an unaffordable upgrade is grey; clicking it (or the tile) shows the red "Not Enough Gold" chip; Gold never goes negative.
 - [ ] 6.6 Open the menu, walk away (or teleport) more than 16 studs, click a tile. **Expect:** purchase refused.
 - [ ] 6.7 Every text in the menu is readable, nothing overlaps or clips.
 
 ## 7. Waves, soldiers, structures
 
-- [ ] 7.1 First wave at about 5 s, then every 25 s. **Expect:** 12 zombies from each zombie core; 4 swordsmen + 1 archer from each barracks.
-- [ ] 7.2 Zombies flow to both base openings, spread out, do not queue in a line or get stuck on towers, fences, trees or rocks for more than a few seconds.
+- [ ] 7.1 Spawning starts about 5 s in and never stops (tug of war, updated 2026-10-22). **Expect:** a group of 4 zombies (some Brutes and Spitters) every 4 s from a ring around the single Zombie Core at the back; 2 swordsmen + 1 archer from each barracks every 15 s.
+- [ ] 7.2 Zombies fan out across the field, then funnel into both base openings; none stuck on towers, fences, trees or rocks for more than a few seconds. Soldiers push toward the Zombie Core and hit it when they reach it.
 - [ ] 7.3 Zombie bite visible (head forward), archer draw visible, arrows and tower shots fly.
 - [ ] 7.4 Health bars only within 60 studs; structure bars show name + icon.
 - [ ] 7.5 Let a tower die (fast setting or wait). **Expect:** it disappears, banner "... destroyed", `[Structures] LeftTower destroyed by Zombies`, removed from the minimap, zombies path through.
@@ -98,6 +99,10 @@ Static checks (luau-lsp, selene, scratch `rojo build`) passed on 2026-10-21; not
 - [ ] 10.5 Both take War Drums. **Expect:** soldier attack speed bonus is +15%, not +30% (no stacking). Same for Storm Banner: +10% with two Mages.
 - [ ] 10.6 Player 2 teleports and casts Strike. **Expect:** player 1 sees the effects at the right place.
 - [ ] 10.7 Player 2 leaves (close their window). **Expect:** removed from party list and Tab board, no errors in the server Output.
+- [ ] 10.8a Player 2 dies (dev panel HERO Die, or let zombies kill them). **Expect:** both see "Player2 has fallen" on the right; player 2's screen goes grey with "YOU DIED", a countdown (5 s at level 1) and the revive hint, the camera orbiting the body, which lies on its back; player 1's party list shows player 2's portrait grey with a shrinking wedge and the seconds.
+- [ ] 10.8b Player 1 walks to the body. **Expect:** a "F Revive Player2" block over it; hold F 3 s: the bar fills, player 2 sees "Player1 is reviving you" with a filling bar, and player 2's portrait ring turns green in player 1's party list. Let go early: everything resets.
+- [ ] 10.8c Complete the hold. **Expect:** player 2 stands up where they fell with 30% health, colour and controls back, "YOU HAVE BEEN REVIVED" banner; both see "Player1 revived Player2"; zombies cannot hurt player 2 for about 2 s.
+- [ ] 10.8d Player 2 dies again. **Expect:** no revive prompt this time; the hint says already revived; after the countdown they respawn at the pad with full health.
 - [ ] 10.8 Check the server Output window (not just the clients'). **Expect:** no red errors.
 
 ## Report back

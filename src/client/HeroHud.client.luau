@@ -1,18 +1,19 @@
 --!strict
 -- Hero HUD on each player's own screen, in the game's UI design system
--- (docs/11_UI_DESIGN.md, values from UiTheme):
---  * bottom centre, your own hero: a level ring, hero name and "current / max"
---    above a thin health bar, a thin gold XP bar with "xp / next XP" beside it,
---    and the Mage's three ability slots (Bolt, Strike on Q, Teleport on E) with
---    circular cooldown sweeps. Pips under the Bolt fill towards the next Arcane
---    Resonance (the character's Resonance attribute) and turn gold when the
---    next hit triggers it.
+-- (docs/11_UI_DESIGN.md, values from UiTheme; blocky restyle owner 2026-10-22):
+--  * bottom centre, your own hero, with no box around it (owner 2026-10-22):
+--    a level ring, a chunky health bar with "current / max" inside it, a gold
+--    XP bar with "xp / next XP" beside it, and the Mage's slots: Bolt, Strike
+--    on Q and Teleport on E (no passive or base buff slot, owner 2026-10-22),
+--    with circular cooldown sweeps. Pips along the bottom of the Bolt slot fill
+--    towards the next Arcane Resonance (the character's Resonance attribute)
+--    and the slot turns gold when the next hit triggers it.
 --    Level and XP follow the server's Level / Xp / XpToNext Player attributes.
---    The ring is quiet normally and turns gold with a soft pulsing glow only
+--    The ring is navy normally and turns gold with a soft pulsing glow only
 --    while a mastery pick is waiting (MasteryPoints > 0), with a gold
 --    "MASTERY" pill above it; clicking the ring (or pressing U) opens the
 --    Character Menu (CharacterMenu.client).
---  * over every other hero's head: their name above a thin health bar (green
+--  * over every other hero's head: their name above a health bar (green
 --    your side, red the enemy). Your own has none: the camera is first person.
 -- The health bars show a pale "recent damage" chunk that drains shortly after a hit.
 -- Display only: the server owns hero health (the Health/MaxHealth attributes).
@@ -37,9 +38,11 @@ local space = UiTheme.space
 local CHIP_DELAY = 0.35 -- seconds before the recent-damage chunk drains
 local CHIP_DRAIN = 0.3
 local CHIP_TRANSPARENCY = 0.5 -- the chunk is white at 50%
-local RING_SIZE = 52
-local BLOCK_WIDTH = 300
-local SLOT_SIZE = 40
+local RING_SIZE = 72
+local BLOCK_WIDTH = 340
+local SLOT_SIZE = 56
+local HEALTH_HEIGHT = 22 -- the HUD's own bar: bigger than UiTheme.Bar.Health, numbers inside
+local XP_HEIGHT = 10
 -- Players are always on our side; used until the server sets the attribute.
 local DEFAULT_TEAM = Config.Teams.Defenders
 
@@ -107,38 +110,41 @@ local function setHealth(bar: HealthBar, current: number, max: number, color: Co
 end
 
 -- Bottom HUD ---------------------------------------------------------------------------
--- [ring]  Zeus                     600 / 600
---         ==================================   health (8 px)
---         ------------                         xp (3 px, gold)
---         [BOLT] [ Q ] [ E ]                   ability slots
+--  (MASTERY)
+--  ( LV )  [######## 600 / 600 ########]     health (22 px, numbers inside)
+--  ( 12 )  [=====-----------]   12 / 30 XP   xp (10 px, gold)
+--          [BOLT] [ Q ] [ E ]                 slots
 
 local screen = Instance.new("ScreenGui")
 screen.Name = "HeroHud"
 screen.ResetOnSpawn = false
 screen.Parent = playerGui
 
-local BLOCK_X = RING_SIZE + space(3)
-local SLOTS_Y = space(12) -- below the name, health bar and XP bar
-local XP_TEXT_WIDTH = 76 -- room right of the XP bar for "xp / next XP"
+local BLOCK_X = RING_SIZE + space(4)
+local XP_Y = HEALTH_HEIGHT + space(2)
+local SLOTS_Y = XP_Y + XP_HEIGHT + space(4) -- room for the key chips above the slots
+local PANEL_HEIGHT = SLOTS_Y + SLOT_SIZE
+local XP_TEXT_WIDTH = 84 -- room right of the XP bar for "xp / next XP"
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
 panel.AnchorPoint = Vector2.new(0.5, 1)
 panel.Position = UDim2.new(0.5, 0, 1, -space(4))
-panel.Size = UDim2.fromOffset(BLOCK_X + BLOCK_WIDTH, SLOTS_Y + SLOT_SIZE)
+panel.Size = UDim2.fromOffset(BLOCK_X + BLOCK_WIDTH, PANEL_HEIGHT)
 panel.BackgroundTransparency = 1
 panel.Parent = screen
 UiTheme.applyScale(panel)
 
 -- Level ring (the badge). Named LevelBadge / OpenUpgrades for CharacterMenu.client.
 -- Soft gold glow behind the ring, shown (pulsing) only while a pick is waiting.
+local RING_Y = PANEL_HEIGHT - RING_SIZE
 local GLOW_SIZE = RING_SIZE + space(4)
 local glow = Instance.new("Frame")
 glow.Name = "Glow"
 glow.AnchorPoint = Vector2.new(0.5, 0.5)
-glow.Position = UDim2.fromOffset(RING_SIZE / 2, RING_SIZE / 2)
+glow.Position = UDim2.fromOffset(RING_SIZE / 2, RING_Y + RING_SIZE / 2)
 glow.Size = UDim2.fromOffset(GLOW_SIZE, GLOW_SIZE)
 glow.BackgroundColor3 = UiTheme.Gold
-glow.BackgroundTransparency = 0.8
+glow.BackgroundTransparency = 0.6
 glow.BorderSizePixel = 0
 glow.Visible = false
 glow.Parent = panel
@@ -146,22 +152,18 @@ UiTheme.corner(glow, GLOW_SIZE // 2)
 local glowPulse = TweenService:Create(
 	glow,
 	TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-	{ BackgroundTransparency = 0.95, Size = UDim2.fromOffset(GLOW_SIZE + space(2), GLOW_SIZE + space(2)) }
+	{ BackgroundTransparency = 0.9, Size = UDim2.fromOffset(GLOW_SIZE + space(3), GLOW_SIZE + space(3)) }
 )
 
-local badge = UiTheme.panel(panel, nil, RING_SIZE // 2)
+local badge = UiTheme.block(panel, "Navy", RING_SIZE // 2)
 badge.Name = "LevelBadge"
+badge.Position = UDim2.fromOffset(0, RING_Y)
 badge.Size = UDim2.fromOffset(RING_SIZE, RING_SIZE)
 badge.ZIndex = 2
-local ring = Instance.new("UIStroke")
-ring.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-ring.Parent = badge
 
--- Quiet white ring normally; gold, thicker and glowing while a pick is waiting.
+-- Navy normally; gold and glowing while a pick is waiting.
 local function setPickWaiting(waiting: boolean)
-	ring.Color = if waiting then UiTheme.Gold else UiTheme.Text
-	ring.Transparency = if waiting then 0 else 0.75
-	ring.Thickness = if waiting then 2.5 else 1.5
+	UiTheme.setFill(badge, if waiting then "Gold" else "Navy")
 	glow.Visible = waiting
 	if waiting then
 		glowPulse:Play()
@@ -170,16 +172,19 @@ local function setPickWaiting(waiting: boolean)
 	end
 end
 setPickWaiting(false)
-local levelCaption = UiTheme.text(badge, 9, Font.Bold, Strength.Label)
-levelCaption.Position = UDim2.fromOffset(0, 9)
-levelCaption.Size = UDim2.new(1, 0, 0, 10)
+local levelCaption = UiTheme.text(badge, Size.Small, Font.Bold)
+levelCaption.Position = UDim2.fromOffset(0, 11)
+levelCaption.Size = UDim2.new(1, 0, 0, 14)
 levelCaption.TextXAlignment = Enum.TextXAlignment.Center
+levelCaption.ZIndex = 2
 levelCaption.Text = "LV"
-local levelText = UiTheme.text(badge, 20, Font.Heavy)
-levelText.Position = UDim2.fromOffset(0, 19)
-levelText.Size = UDim2.new(1, 0, 0, 22)
+local levelText = UiTheme.text(badge, 32, Font.Heavy)
+levelText.Position = UDim2.fromOffset(0, 24)
+levelText.Size = UDim2.new(1, 0, 0, 34)
 levelText.TextXAlignment = Enum.TextXAlignment.Center
+levelText.ZIndex = 2
 levelText.Text = "1"
+
 local badgeButton = Instance.new("TextButton")
 badgeButton.Name = "OpenUpgrades"
 badgeButton.BackgroundTransparency = 1
@@ -188,23 +193,20 @@ badgeButton.Size = UDim2.fromScale(1, 1)
 badgeButton.ZIndex = 3
 badgeButton.Parent = badge
 
--- "MASTERY" pill above the ring while a mastery pick is waiting: a gold pill
--- with a dark key chip showing U (opens the Character Menu), and "x2" when
+-- "MASTERY" pill above the ring while a mastery pick is waiting: a gold block
+-- with a navy key chip showing U (opens the Character Menu), and "x2" when
 -- several picks are queued. It bobs gently so it is noticed without shouting.
-local pickHint = Instance.new("Frame")
+local PILL_Y = RING_Y - space(2)
+local pickHint = UiTheme.block(panel, "Gold", UiTheme.Radius, UiTheme.OutlineThin)
 pickHint.Name = "PickHint"
-pickHint.AnchorPoint = Vector2.new(0, 1)
-pickHint.Position = UDim2.fromOffset(0, -space(2))
-pickHint.Size = UDim2.fromOffset(0, 22)
+pickHint.AnchorPoint = Vector2.new(0.5, 1)
+pickHint.Position = UDim2.fromOffset(RING_SIZE / 2, PILL_Y)
+pickHint.Size = UDim2.fromOffset(0, 28)
 pickHint.AutomaticSize = Enum.AutomaticSize.X
-pickHint.BackgroundColor3 = UiTheme.Gold
-pickHint.BorderSizePixel = 0
 pickHint.Visible = false
 pickHint.ZIndex = 4
-pickHint.Parent = panel
-UiTheme.corner(pickHint, 11)
 local pickPad = Instance.new("UIPadding")
-pickPad.PaddingLeft = UDim.new(0, 3)
+pickPad.PaddingLeft = UDim.new(0, space(1))
 pickPad.PaddingRight = UDim.new(0, space(2))
 pickPad.Parent = pickHint
 local pickLayout = Instance.new("UIListLayout")
@@ -213,35 +215,29 @@ pickLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 pickLayout.Padding = UDim.new(0, space(1) + 2)
 pickLayout.SortOrder = Enum.SortOrder.LayoutOrder
 pickLayout.Parent = pickHint
-local keyChip = Instance.new("Frame")
+local keyChip = UiTheme.block(pickHint, "Navy", 6, UiTheme.OutlineThin)
 keyChip.LayoutOrder = 1
-keyChip.Size = UDim2.fromOffset(16, 16)
-keyChip.BackgroundColor3 = UiTheme.OnGold
-keyChip.BorderSizePixel = 0
+keyChip.Size = UDim2.fromOffset(20, 20)
 keyChip.ZIndex = 5
-keyChip.Parent = pickHint
-UiTheme.corner(keyChip, 8)
-local keyChipText = UiTheme.text(keyChip, Size.Caption, Font.Heavy)
+local keyChipText = UiTheme.text(keyChip, Size.Small, Font.Heavy)
 keyChipText.Size = UDim2.fromScale(1, 1)
 keyChipText.TextXAlignment = Enum.TextXAlignment.Center
-keyChipText.TextColor3 = UiTheme.Gold
-keyChipText.Text = "U"
 keyChipText.ZIndex = 6
-local pickHintText = UiTheme.text(pickHint, Size.Small, Font.Heavy)
+keyChipText.Text = "U"
+local pickHintText = UiTheme.text(pickHint, Size.Value, Font.Heavy)
 pickHintText.LayoutOrder = 2
-pickHintText.Size = UDim2.fromOffset(0, 22)
+pickHintText.Size = UDim2.fromOffset(0, 28)
 pickHintText.AutomaticSize = Enum.AutomaticSize.X
 pickHintText.TextTruncate = Enum.TextTruncate.None
-pickHintText.TextColor3 = UiTheme.OnGold
 pickHintText.ZIndex = 5
 pickHintText.Text = "MASTERY"
 local pickBob = TweenService:Create(
 	pickHint,
 	TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-	{ Position = UDim2.fromOffset(0, -space(3)) }
+	{ Position = UDim2.fromOffset(RING_SIZE / 2, PILL_Y - space(1)) }
 )
 
--- Name and health numbers above the bar.
+-- Health bar with the numbers inside, then the XP bar.
 local block = Instance.new("Frame")
 block.Name = "Status"
 block.Position = UDim2.fromOffset(BLOCK_X, 0)
@@ -249,33 +245,24 @@ block.Size = UDim2.fromOffset(BLOCK_WIDTH, SLOTS_Y)
 block.BackgroundTransparency = 1
 block.Parent = panel
 
-local heroNameText = UiTheme.text(block, Size.Small, Font.Bold, Strength.Label)
-heroNameText.Size = UDim2.new(0.5, 0, 0, 16)
-UiTheme.floatingText(heroNameText)
-local hudText = UiTheme.text(block, Size.Small, Font.Bold)
-hudText.AnchorPoint = Vector2.new(1, 0)
-hudText.Position = UDim2.fromScale(1, 0)
-hudText.Size = UDim2.new(0.5, 0, 0, 16)
-hudText.TextXAlignment = Enum.TextXAlignment.Right
-UiTheme.floatingText(hudText)
+local hudBar = healthBar(block, HEALTH_HEIGHT)
+local hudText = UiTheme.text(hudBar.track, Size.Value, Font.Bold)
+hudText.Size = UDim2.fromScale(1, 1)
+hudText.TextXAlignment = Enum.TextXAlignment.Center
+hudText.ZIndex = 3
 
-local hudBar = healthBar(block, UiTheme.Bar.Health)
-hudBar.track.Position = UDim2.fromOffset(0, space(5))
-
-local XP_Y = space(5) + UiTheme.Bar.Health + space(2)
-local xpBar = UiTheme.bar(block, UiTheme.Bar.Xp, UiTheme.Gold)
+local xpBar = UiTheme.bar(block, XP_HEIGHT, UiTheme.Gold)
 xpBar.track.Name = "XpBar"
 xpBar.track.Position = UDim2.fromOffset(0, XP_Y)
-xpBar.track.Size = UDim2.new(1, -XP_TEXT_WIDTH, 0, UiTheme.Bar.Xp)
+xpBar.track.Size = UDim2.new(1, -XP_TEXT_WIDTH, 0, XP_HEIGHT)
 xpBar.fill.Size = UDim2.fromScale(0, 1)
--- "12 / 30 XP" right of the bar (labels sit beside bars, never inside).
-local xpText = UiTheme.text(block, Size.Caption, Font.Bold, Strength.Label)
+-- "12 / 30 XP" right of the bar.
+local xpText = UiTheme.text(block, Size.Small + 1, Font.Bold, Strength.Label)
 xpText.Name = "XpText"
 xpText.AnchorPoint = Vector2.new(1, 0.5)
-xpText.Position = UDim2.new(1, 0, 0, XP_Y + UiTheme.Bar.Xp / 2)
-xpText.Size = UDim2.fromOffset(XP_TEXT_WIDTH - space(2), 14)
+xpText.Position = UDim2.new(1, 0, 0, XP_Y + XP_HEIGHT / 2)
+xpText.Size = UDim2.fromOffset(XP_TEXT_WIDTH - space(2), 16)
 xpText.TextXAlignment = Enum.TextXAlignment.Right
-UiTheme.floatingText(xpText)
 
 local function refreshXp()
 	local level = readWholeNumber("Level") or 1
@@ -293,7 +280,7 @@ local function refreshXp()
 			pickBob:Play()
 		else
 			pickBob:Cancel()
-			pickHint.Position = UDim2.fromOffset(0, -space(2))
+			pickHint.Position = UDim2.fromOffset(RING_SIZE / 2, PILL_Y)
 		end
 	end
 	setPickWaiting(waiting)
@@ -318,42 +305,60 @@ slotRow.BackgroundTransparency = 1
 slotRow.Parent = panel
 local layout = Instance.new("UIListLayout")
 layout.FillDirection = Enum.FillDirection.Horizontal
-layout.Padding = UDim.new(0, space(2))
+layout.Padding = UDim.new(0, space(3))
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = slotRow
 
 local slots: { Slot } = {}
 
-local function addSlot(name: string, label: string, key: string, order: number, action: string, defaultCooldown: number): TextButton
+-- A deep blue block slot with its name in the middle and, if it has one, a navy
+-- key chip on its top-left corner.
+local function slotButton(name: string, label: string, key: string?, order: number): (TextButton, TextLabel)
 	local button = Instance.new("TextButton")
 	button.Name = name
 	button.LayoutOrder = order
 	button.Size = UDim2.fromOffset(SLOT_SIZE, SLOT_SIZE)
-	button.BackgroundColor3 = UiTheme.Surface
-	button.BackgroundTransparency = UiTheme.SurfaceTransparency
+	button.AutoButtonColor = false
 	button.Text = ""
 	button.Parent = slotRow
-	UiTheme.corner(button)
+	UiTheme.styleBlock(button, "Deep", UiTheme.Radius) -- owner 2026-10-22: Blue was too bright
 
-	local keyText = UiTheme.text(button, 9, Font.Bold, Strength.Faint)
-	keyText.Position = UDim2.fromOffset(space(1), 2)
-	keyText.Size = UDim2.fromOffset(SLOT_SIZE, 10)
-	keyText.Text = key
-
-	local caption = UiTheme.text(button, 10, Font.Heavy)
-	caption.Position = UDim2.fromOffset(2, 6)
-	caption.Size = UDim2.new(1, -4, 1, 0)
+	local caption = UiTheme.text(button, Size.Value + 2, Font.Heavy) -- owner 2026-10-22: bigger (was Small)
+	caption.Position = UDim2.fromOffset(3, 0)
+	caption.Size = UDim2.new(1, -6, 1, 0)
 	caption.TextXAlignment = Enum.TextXAlignment.Center
 	caption.TextScaled = true -- long names shrink to fit the slot
 	caption.Text = label
 	local captionLimit = Instance.new("UITextSizeConstraint")
-	captionLimit.MaxTextSize = 10
+	captionLimit.MaxTextSize = Size.Value + 2 -- 18; TELEPORT still shrinks to fit the slot
 	captionLimit.Parent = caption
 
-	-- Cooldown: a dark wedge that sweeps away like a clock, seconds in the centre.
-	local setCooldown = UiTheme.radialCover(button)
-	setCooldown(0, "")
+	if key then
+		local chip = UiTheme.block(button, "Navy", 6, UiTheme.OutlineThin)
+		chip.Name = "Key"
+		chip.Position = UDim2.fromOffset(-space(2), -space(2))
+		chip.Size = UDim2.fromOffset(0, 18)
+		chip.AutomaticSize = Enum.AutomaticSize.X
+		chip.ZIndex = 4
+		local chipPad = Instance.new("UIPadding")
+		chipPad.PaddingLeft = UDim.new(0, space(1))
+		chipPad.PaddingRight = UDim.new(0, space(1))
+		chipPad.Parent = chip
+		local keyText = UiTheme.text(chip, Size.Caption, Font.Bold)
+		keyText.Size = UDim2.fromOffset(0, 18)
+		keyText.AutomaticSize = Enum.AutomaticSize.X
+		keyText.TextTruncate = Enum.TextTruncate.None
+		keyText.ZIndex = 5
+		keyText.Text = key
+	end
+	return button, caption
+end
 
+local function addSlot(name: string, label: string, key: string, order: number, action: string, defaultCooldown: number): TextButton
+	local button, caption = slotButton(name, label, key, order)
+	-- Cooldown: a dark wedge that sweeps away like a clock, seconds in the centre.
+	local setCooldown = UiTheme.radialCover(button, UiTheme.Radius)
+	setCooldown(0, "")
 	table.insert(slots, {
 		button = button,
 		caption = caption,
@@ -369,13 +374,14 @@ local boltSlot = addSlot("Attack", "BOLT", "LMB", 1, "Pulse", Config.Hero.Pulse.
 addSlot("Skill1", "STRIKE", "Q", 2, "Strike", Skills.Strike.Cooldown)
 addSlot("Skill2", "TELEPORT", "E", 3, "Teleport", Skills.Teleport.Cooldown)
 
--- Arcane Resonance pips along the bottom of the Bolt slot: one per hit needed
--- before the bonus hit; all gold = the next hit triggers it.
-local PIP_SIZE = 4
+-- Arcane Resonance pips along the bottom of the BOLT slot (owner 2026-10-22:
+-- no separate PASSIVE slot): one per hit needed before the bonus hit; the
+-- slot turns gold when the next hit triggers it.
+local PIP_SIZE = 7
 local pipRow = Instance.new("Frame")
 pipRow.Name = "Resonance"
 pipRow.AnchorPoint = Vector2.new(0.5, 1)
-pipRow.Position = UDim2.new(0.5, 0, 1, -3)
+pipRow.Position = UDim2.new(0.5, 0, 1, -5)
 pipRow.Size = UDim2.new(1, 0, 0, PIP_SIZE)
 pipRow.BackgroundTransparency = 1
 pipRow.ZIndex = 5
@@ -386,6 +392,7 @@ pipLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 pipLayout.Padding = UDim.new(0, 3)
 pipLayout.Parent = pipRow
 local pips: { Frame } = {}
+local wasCharged: boolean? = nil
 
 local function hasMastery(id: string): boolean
 	return player:GetAttribute("Mastery" .. id) == true
@@ -400,7 +407,11 @@ local function refreshPassive(character: Model?)
 		pip.BorderSizePixel = 0
 		pip.ZIndex = 5
 		pip.Parent = pipRow
-		UiTheme.corner(pip, PIP_SIZE // 2)
+		UiTheme.corner(pip, 2)
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = UiTheme.Ink
+		stroke.Thickness = 1.5
+		stroke.Parent = pip
 		table.insert(pips, pip)
 	end
 	local hits = if character then character:GetAttribute("Resonance") else nil
@@ -408,8 +419,11 @@ local function refreshPassive(character: Model?)
 	local charged = count >= needed
 	for index, pip in pips do
 		pip.Visible = index <= needed
-		pip.BackgroundColor3 = if charged then UiTheme.Gold else UiTheme.Text
-		pip.BackgroundTransparency = if index <= count then 0 else 0.7
+		pip.BackgroundColor3 = if index <= count then UiTheme.Text else UiTheme.Ink
+	end
+	if charged ~= wasCharged then
+		wasCharged = charged
+		UiTheme.setFill(boltSlot, if charged then "Gold" else "Deep")
 	end
 end
 
@@ -438,8 +452,6 @@ local function refreshHud(character: Model)
 	local current, max = readHealth(character)
 	setHealth(hudBar, current, max, UiTheme.Ally)
 	hudText.Text = `{math.ceil(current)} / {max}`
-	local heroName = character:GetAttribute("HeroName")
-	heroNameText.Text = if type(heroName) == "string" then heroName else "Hero"
 end
 
 local function watchOwnHero(character: Model)
@@ -450,7 +462,7 @@ local function watchOwnHero(character: Model)
 	hudBar.chip.Size = UDim2.fromScale(1, 1)
 	refreshHud(character)
 	-- Only the attributes the HUD shows (not e.g. the attack cooldown, which changes every shot).
-	for _, name in { "Health", "MaxHealth", "HeroName" } do
+	for _, name in { "Health", "MaxHealth" } do
 		table.insert(hudConnections, character:GetAttributeChangedSignal(name):Connect(function()
 			refreshHud(character)
 		end))
@@ -458,7 +470,7 @@ local function watchOwnHero(character: Model)
 end
 
 -- Overhead bars (other heroes) ------------------------------------------------------
--- Name above a thin bar, shown within Config.Display.HealthBarRange of your hero.
+-- Name above a bar, shown within Config.Display.HealthBarRange of your hero.
 
 type Overhead = { billboard: BillboardGui, character: Model, alive: boolean }
 local overheads: { [Model]: Overhead } = {}
@@ -485,7 +497,7 @@ local function addOverhead(owner: Player, character: Model)
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "HeroBar"
 	billboard.Adornee = head
-	billboard.Size = UDim2.fromOffset(110, 22)
+	billboard.Size = UDim2.fromOffset(110, 26)
 	billboard.StudsOffset = Vector3.new(0, 2.6, 0)
 	billboard.LightInfluence = 0
 	local overhead: Overhead = { billboard = billboard, character = character, alive = false }

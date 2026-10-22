@@ -1,7 +1,8 @@
 --!strict
 -- Target panel at the top centre (owner 2026-10-21): the face, name and health
--- of whatever you are aiming at (the enemy under the red marker, published by
--- HeroControls.client as the local player's "AimTarget" ObjectValue).
+-- of whatever you are aiming at (the enemy under the red marker, or an ally
+-- under the crosshair, published by HeroControls.client as the local player's
+-- "AimTarget" ObjectValue).
 -- In the UI design system (docs/11_UI_DESIGN.md): one surface panel, a round
 -- portrait, name and "current / max", a thin health bar (red enemy, green ally).
 -- The portrait is a small 3D view of the unit's head (ViewportFrame); buildings
@@ -58,7 +59,7 @@ portrait.Position = UDim2.fromOffset(space(2), space(2))
 portrait.Size = UDim2.fromOffset(PORTRAIT, PORTRAIT)
 portrait.BackgroundColor3 = UiTheme.Raised
 portrait.BackgroundTransparency = UiTheme.RaisedHoverTransparency
-portrait.Ambient = Color3.fromRGB(170, 170, 170)
+portrait.Ambient = Color3.fromRGB(200, 200, 200)
 portrait.LightColor = Color3.new(1, 1, 1)
 portrait.LightDirection = Vector3.new(-1, -1, -1)
 portrait.Parent = canvas
@@ -106,8 +107,7 @@ local function displayName(target: Instance): string
 	return spaced
 end
 
--- Puts a copy of the head (and anything welded to its face, like zombie eyes)
--- in the portrait, framed from the front.
+-- Puts a still copy of the unit in the portrait, its head framed from the front.
 local function showPortrait(target: Instance)
 	portrait:ClearAllChildren()
 	portraitCamera = Instance.new("Camera")
@@ -128,28 +128,27 @@ local function showPortrait(target: Instance)
 	portraitTag.Text = ""
 	local world = Instance.new("WorldModel")
 	world.Parent = portrait
-	local copies: { Instance } = { head }
-	for _, item in target:GetChildren() do
-		if item:IsA("BasePart") and item.Name == "Eye" then
-			table.insert(copies, item)
+	-- The whole body is copied, not just the head: a lone head loses its skin
+	-- colour (it showed white, owner 2026-10-23), the whole model keeps it the
+	-- same way every spawned unit does. The camera only frames the head.
+	local wasArchivable = target.Archivable
+	target.Archivable = true
+	local copy = target:Clone()
+	target.Archivable = wasArchivable
+	-- Scripts are removed before the copy is parented: a LocalScript (a
+	-- player's Animate) would otherwise start running inside the PlayerGui.
+	for _, item in copy:GetDescendants() do
+		if item:IsA("LuaSourceContainer") or item:IsA("BillboardGui") or item:IsA("Sound") then
+			item:Destroy()
+		elseif item:IsA("BasePart") then
+			item.Anchored = true
 		end
 	end
-	for _, original in copies do
-		local wasArchivable = original.Archivable
-		original.Archivable = true
-		local copy = original:Clone()
-		original.Archivable = wasArchivable
-		for _, child in copy:GetChildren() do
-			if child:IsA("JointInstance") or child:IsA("Constraint") or child:IsA("BillboardGui") then
-				child:Destroy()
-			end
-		end
-		if copy:IsA("BasePart") then
-			copy.Anchored = true
-			copy.CFrame = (original :: BasePart).CFrame
-		end
-		copy.Parent = world
+	local copyHumanoid = copy:FindFirstChildOfClass("Humanoid")
+	if copyHumanoid then
+		copyHumanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	end
+	copy.Parent = world
 	-- Camera in front of the face, looking back at it.
 	local front = head.CFrame.LookVector
 	portraitCamera.CFrame = CFrame.lookAt(head.Position + front * 3.2 + Vector3.new(0, 0.15, 0), head.Position)

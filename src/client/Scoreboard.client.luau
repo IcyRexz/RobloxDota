@@ -3,16 +3,20 @@
 -- game's UI design system (docs/11_UI_DESIGN.md, values from UiTheme).
 --  * Always on: every player in the match stacked vertically, you first: a
 --    round portrait, the level in a small gold-rimmed circle under it, and a
---    thin health bar (green; the portrait greys out while dead).
+--    thin health bar (green). While down (owner 2026-10-23) the portrait greys
+--    out under a dark wedge that shrinks with the respawn countdown, with the
+--    seconds left on it; while an ally revives them the ring turns green and
+--    the wedge shows the revive filling instead.
 --  * Hold Tab: the scoreboard replaces it: one row per player with portrait,
 --    name and class, level, kills, masteries picked (one chip per mastery
 --    level: initials in gold once picked, faint while still open) and Gold.
 --    Your own row is lit. Release Tab to go back.
 -- Roblox's own player list (also on Tab) is turned off. Reads only replicated
 -- attributes (Player: Level, Kills, Gold, Mastery<id>; character: Health,
--- MaxHealth, HeroName). Display only.
+-- MaxHealth, HeroName, DownedAt, RespawnAt, ReviveStartedAt). Display only.
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
@@ -228,6 +232,7 @@ type Entry = {
 	owner: Player,
 	partyItem: Frame,
 	partyPortrait: ImageLabel,
+	partyCover: (number, string) -> (),
 	partyLevel: TextLabel,
 	partyHealth: UiTheme.Bar,
 	row: Frame,
@@ -255,6 +260,8 @@ local function addEntry(owner: Player)
 	item.Parent = party
 	local partyPortrait = portrait(item, owner, PORTRAIT)
 	partyPortrait.Position = UDim2.fromOffset(4, 0)
+	local partyCover = UiTheme.radialCover(partyPortrait, PORTRAIT // 2, Size.Title)
+	partyCover(0, "")
 	local badge = UiTheme.panel(item, 0.1, BADGE // 2)
 	badge.AnchorPoint = Vector2.new(0.5, 0.5)
 	badge.Position = UDim2.fromOffset(4 + PORTRAIT / 2, PORTRAIT)
@@ -321,6 +328,7 @@ local function addEntry(owner: Player)
 		owner = owner,
 		partyItem = item,
 		partyPortrait = partyPortrait,
+		partyCover = partyCover,
 		partyLevel = partyLevel,
 		partyHealth = partyHealth,
 		row = row,
@@ -355,6 +363,27 @@ local function refreshEntry(entry: Entry)
 	entry.partyHealth.fill.Size = UDim2.fromScale(share, 1)
 	entry.partyPortrait.ImageTransparency = if alive then 0 else 0.6
 	entry.partyPortrait.ImageColor3 = if alive then Color3.new(1, 1, 1) else Color3.fromRGB(120, 120, 120)
+	-- Down: countdown wedge and seconds; being revived: green ring, revive wedge.
+	local now = Workspace:GetServerTimeNow()
+	local downedAt = if character and not alive then readNumber(character, "DownedAt") else 0
+	local respawnAt = if character then readNumber(character, "RespawnAt") else 0
+	local reviveStartedAt = if character and not alive then readNumber(character, "ReviveStartedAt") else 0
+	local ring = entry.partyPortrait:FindFirstChildOfClass("UIStroke")
+	if downedAt > 0 and respawnAt > downedAt then
+		local left = math.max(respawnAt - now, 0)
+		local wedge = if reviveStartedAt > 0
+			then 1 - math.clamp((now - reviveStartedAt) / Hero.Death.ReviveHold, 0, 1)
+			else left / (respawnAt - downedAt)
+		entry.partyCover(wedge, if left > 0 then tostring(math.ceil(left)) else "")
+	else
+		entry.partyCover(0, "")
+	end
+	if ring then
+		local reviving = reviveStartedAt > 0
+		ring.Color = if reviving then UiTheme.Ally else UiTheme.Text
+		ring.Transparency = if reviving then 0 else 0.75
+		ring.Thickness = if reviving then 2.5 else 1.5
+	end
 
 	if not board.Visible then
 		return

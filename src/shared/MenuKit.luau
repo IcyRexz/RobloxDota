@@ -1,41 +1,38 @@
 --!strict
 -- The one layout every full menu uses (owner 2026-10-21: the Base Upgrades
--- page must look and be organised like the Character Menu), built from
--- UiTheme values (docs/11_UI_DESIGN.md). Both CharacterMenu.client and
--- BaseUpgradeMenu.client build their window from these pieces only. The top of
--- the left column comes in two kinds; everything else is shared:
+-- page must look and be organised like the Character Menu; blocky restyle
+-- owner 2026-10-22), built from UiTheme values (docs/11_UI_DESIGN.md). Both
+-- CharacterMenu.client and BaseUpgradeMenu.client build their window from
+-- these pieces only. The top of the left column comes in two kinds;
+-- everything else is shared:
 --
+--   Title (on the gold rim, flush left)                                 [X]
 --   left column (34%)                    right column (66%)
---   profile top:        picker top:       Heading                     o o o o o
---   [ring] Title        CAPTION           subtitle (gold when actionable)
---          subtitle     [icon Name  2/6]  [tile] [tile] [tile]
---   ==== gold bar ====  [icon Name  Lv2]  [tile] [tile] [tile]
---   bar label           [icon Name  0/6]  [tile] [tile] [tile]
---   CAPTION
---   label ............ value  x5
---   CAPTION (profile only)                                        "X to close"
+--   profile top:        picker top:       Heading [chip]              # # # #
+--   +----------------+  CAPTION           +-- grid panel ---------------+
+--   |[LV] Title      |  [icon Name  2/6]  | [tile] [tile] [tile]        |
+--   |     subtitle   |  [icon Name  Lv2]  | [tile] [tile] [tile]        |
+--   |     ==== XP ===|  [icon Name  0/6]  +-----------------------------+
+--   +----------------+                    +-- info area ----------------+
+--   CAPTION                               | Title              [button] |
+--   +-- stat rows ---+                    | Improves: ...      [button] |
+--   | label   value  |                    | body text                   |
+--   +----------------+                    +-----------------------------+
+--   CAPTION (profile only)                                    "X to close"
 --   [slot][slot][slot][slot][slot]
---   +-- info area -----------------+
---   | Title                         |
---   | Improves: ...   (orange)      |
---   | body text                     |
---   +-------------------------------+
 --
 -- Profile top (Character Menu): level ring, name, class, XP bar, then the
--- ABILITIES slot row under the stats. Picker top (Base Upgrades, owner
--- 2026-10-21: bigger building icons, less repetition): full-width cards to
--- choose what the rest of the menu shows, and no slot row.
--- Tiles: name, an orange "Improves: ..." line, short text, and a corner line
--- (TAKEN / OWNED / a price). Hovering a slot, card or tile fills the info
+-- ABILITIES slot row under the stats. Picker top (Base Upgrades): full-width
+-- cards to choose what the rest of the menu shows, and no slot row.
+-- Tiles show only a name and an orange "Improves: ..." line (owner
+-- 2026-10-22); the full text, the price and the buy / pick button are in the
+-- info area under the grid. Hovering a slot, card or tile fills the info
 -- area; there are no floating tooltips.
 -- Text that can run to two lines (owner 2026-10-22: wrapped lines pushed things
 -- out of place) is made with flow(): it grows to fit its lines inside a
 -- UIListLayout, so a second line moves what follows down instead of
 -- overlapping it or being cut off. The info area scrolls when its text is
 -- longer than the space; text is never shrunk to fit.
--- Options for the Base Upgrades menu (owner 2026-10-21): infoUnderGrid moves
--- the info area under the grid on the right; largeText makes cards, tiles,
--- stat rows and the info area bigger.
 
 local Workspace = game:GetService("Workspace")
 
@@ -68,25 +65,29 @@ local function stack(parent: Instance, gap: number)
 end
 
 MenuKit.WIDTH = 900
-MenuKit.HEIGHT = 560
+MenuKit.HEIGHT = 600
 MenuKit.LEFT_SHARE = 0.34
-MenuKit.PAD = space(6) -- 24
+MenuKit.RIM = 6 -- the gold rim around the blue body
+MenuKit.PAD = space(6) -- 24, column sides
+MenuKit.PAD_TOP = space(9) -- 36, room under the title on the rim
+MenuKit.PAD_BOTTOM = space(5) -- 20
 MenuKit.ROW_HEIGHT = space(8) -- 32
 MenuKit.STAT_ROWS = 5
-MenuKit.SLOT_SIZE = 40
-MenuKit.RING_SIZE = 48
-MenuKit.CARD_HEIGHT = 52
-MenuKit.GRID_TOP = space(15)
-MenuKit.TILE_HEIGHT = 116
-MenuKit.TILE_GAP = space(3)
+MenuKit.SLOT_SIZE = 44
+MenuKit.RING_SIZE = 56
+MenuKit.PROFILE_HEIGHT = 80
+MenuKit.CARD_HEIGHT = 56
+MenuKit.GRID_TOP = space(12) -- 48, under the heading
+MenuKit.GRID_PAD = space(2) + 2 -- 10, inside the grid panel
+MenuKit.TILE_HEIGHT = 84
+MenuKit.BUTTON_TILE_HEIGHT = 108 -- tiles with a price button at the bottom (Base Upgrades)
+MenuKit.TILE_BUTTON_HEIGHT = 28
+MenuKit.TILE_GAP = space(2) + 2 -- 10
 MenuKit.COLUMNS = 3
--- Large text (Base Upgrades, owner 2026-10-21: building and upgrade text was
--- too small): taller cards and tiles to hold it.
-MenuKit.LARGE_CARD_HEIGHT = 60
-MenuKit.LARGE_TILE_HEIGHT = 128
-MenuKit.LARGE_ROW_HEIGHT = space(9) -- 36
+MenuKit.INFO_BUTTON_WIDTH = 150
 
-local CLOSE_HINT_SPACE = 24 -- kept free at the bottom of the right column
+local CLOSE_HINT_SPACE = 22 -- kept free at the bottom of the right column
+local CAPTION_HEIGHT = 18
 
 local GOLD_HEX = UiTheme.Gold:ToHex()
 MenuKit.GOLD_HEX = GOLD_HEX
@@ -101,11 +102,22 @@ local function padding(parent: Instance, top: number, side: number, bottom: numb
 end
 
 local function caption(parent: Instance, label: string, y: number): TextLabel
-	local title = UiTheme.text(parent, Size.Caption, Font.Bold, Strength.Faint)
+	local title = UiTheme.text(parent, Size.Small, Font.Bold)
 	title.Position = UDim2.fromOffset(0, y)
-	title.Size = UDim2.new(1, 0, 0, 14)
+	title.Size = UDim2.new(1, 0, 0, CAPTION_HEIGHT)
 	title.Text = label
 	return title
+end
+
+-- A button made into a block, with no text of its own.
+local function blockButton(parent: Instance, fill: UiTheme.FillName, radius: number?, thickness: number?): TextButton
+	local button = Instance.new("TextButton")
+	button.AutoButtonColor = false
+	button.Text = ""
+	button.BackgroundTransparency = 0
+	button.Parent = parent
+	UiTheme.styleBlock(button, fill, radius, thickness)
+	return button
 end
 
 -- 60 -> "60", 202.5 -> "202.5", 1.3333 -> "1.33"
@@ -117,20 +129,26 @@ function MenuKit.formatNumber(value: number): string
 	return trimmed
 end
 
-export type Slot = { button: TextButton, label: TextLabel, line: UIStroke }
-export type Card = { button: TextButton, line: UIStroke, icon: TextLabel, name: TextLabel, detail: TextLabel, hover: boolean }
+export type Slot = { button: TextButton, label: TextLabel, selected: boolean }
+export type Card = { button: TextButton, icon: TextLabel, name: TextLabel, detail: TextLabel, hover: boolean }
 export type Tile = {
 	button: TextButton,
-	line: UIStroke,
 	name: TextLabel,
 	improves: TextLabel,
-	text: TextLabel,
-	corner: TextLabel,
+	check: Frame,
+	price: TextButton, -- the small buy button (tileButtons menus only; hidden otherwise)
+	priceText: TextLabel,
 	hover: boolean,
+	selected: boolean,
 }
 export type Options = {
+	title: string, -- on the rim, top left
 	statsCaption: string,
 	closeText: string,
+	-- Grid rows the info area sits under.
+	gridRows: number,
+	-- Tiles get a small price button at the bottom (Base Upgrades).
+	tileButtons: boolean?,
 	-- Profile top: the caption over the slot row (e.g. ABILITIES).
 	slotsCaption: string?,
 	-- Picker top instead: the caption over the cards and how many there are.
@@ -138,17 +156,14 @@ export type Options = {
 	pickerCount: number?,
 	-- Stat rows in the left column (default STAT_ROWS).
 	statRows: number?,
-	-- Info area under the grid in the right column (holding this many grid
-	-- rows) instead of at the bottom of the left column.
-	infoUnderGrid: number?,
-	-- Bigger text on cards, tiles and stat rows.
-	largeText: boolean?,
 }
 export type Menu = {
 	screen: ScreenGui,
 	window: Frame,
 	left: Frame,
 	right: Frame,
+	titleLabel: TextLabel,
+	closeButton: TextButton,
 	-- left column, profile top (hidden with a picker top)
 	ringCaption: TextLabel, -- small text above the ring's value ("LV"; "" for none)
 	ringValue: TextLabel,
@@ -163,18 +178,23 @@ export type Menu = {
 	statsCaption: TextLabel,
 	statLabels: { TextLabel },
 	statValues: { TextLabel },
+	-- right column
+	heading: TextLabel,
+	headingChip: Frame,
+	headingSub: TextLabel,
+	pipRow: Frame,
+	grid: Frame,
 	infoScroll: ScrollingFrame,
 	infoTitle: TextLabel,
 	infoImproves: TextLabel,
 	infoBody: TextLabel,
-	-- right column
-	heading: TextLabel,
-	headingSub: TextLabel,
-	pipRow: Frame,
-	grid: Frame,
+	infoButton: TextButton,
+	infoButtonText: TextLabel,
+	infoAction: (() -> ())?,
 	closeHint: TextLabel,
+	tileHeight: number,
+	tileButtons: boolean,
 	fitToScreen: () -> (),
-	largeText: boolean,
 }
 
 -- Builds the window (hidden).
@@ -198,13 +218,44 @@ function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 	scrim.Modal = true
 	scrim.Parent = screen
 
-	local window = UiTheme.panel(screen, UiTheme.MenuTransparency, UiTheme.RadiusLarge)
+	-- The window is the gold rim; the blue body sits inside it.
+	local window = UiTheme.block(screen, "Gold", UiTheme.RadiusLarge)
 	window.Name = "Window"
 	window.AnchorPoint = Vector2.new(0.5, 0.5)
 	window.Position = UDim2.fromScale(0.5, 0.5)
 	window.Size = UDim2.fromOffset(MenuKit.WIDTH, MenuKit.HEIGHT)
 	local fit = Instance.new("UIScale")
 	fit.Parent = window
+	local body = UiTheme.block(window, "Blue", UiTheme.RadiusLarge - MenuKit.RIM // 2, 2)
+	body.Name = "Body"
+	body.Position = UDim2.fromOffset(MenuKit.RIM, MenuKit.RIM)
+	body.Size = UDim2.new(1, -MenuKit.RIM * 2, 1, -MenuKit.RIM * 2)
+	UiTheme.setOutline(body, Color3.fromRGB(26, 111, 192), 2)
+
+	-- Title on the rim, flush left (owner 2026-10-22: no icon), and the close button.
+	local titleLabel = UiTheme.text(window, Size.Display, Font.Heavy)
+	titleLabel.Name = "Title"
+	titleLabel.AnchorPoint = Vector2.new(0, 0.5)
+	titleLabel.Position = UDim2.fromOffset(MenuKit.PAD, 4)
+	titleLabel.Size = UDim2.fromOffset(0, 40)
+	titleLabel.AutomaticSize = Enum.AutomaticSize.X
+	titleLabel.TextTruncate = Enum.TextTruncate.None
+	titleLabel.ZIndex = 5
+	titleLabel.Text = options.title
+
+
+	local closeButton = blockButton(window, "Red", UiTheme.Radius)
+	closeButton.Name = "Close"
+	closeButton.AnchorPoint = Vector2.new(1, 0)
+	closeButton.Position = UDim2.new(1, space(3), 0, -space(4))
+	closeButton.Size = UDim2.fromOffset(48, 44)
+	closeButton.ZIndex = 5
+	UiTheme.pressable(closeButton)
+	local closeX = UiTheme.text(closeButton, Size.Heading, Font.Heavy)
+	closeX.Size = UDim2.fromScale(1, 1)
+	closeX.TextXAlignment = Enum.TextXAlignment.Center
+	closeX.ZIndex = 6
+	closeX.Text = "X"
 
 	local function column(columnName: string, x: number, width: number): Frame
 		local frame = Instance.new("Frame")
@@ -212,81 +263,71 @@ function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 		frame.Position = UDim2.fromScale(x, 0)
 		frame.Size = UDim2.fromScale(width, 1)
 		frame.BackgroundTransparency = 1
-		frame.Parent = window
-		padding(frame, MenuKit.PAD, MenuKit.PAD, MenuKit.PAD)
+		frame.Parent = body
+		padding(frame, MenuKit.PAD_TOP, MenuKit.PAD, MenuKit.PAD_BOTTOM)
 		return frame
 	end
 	local left = column("Left", 0, MenuKit.LEFT_SHARE)
 	local right = column("Right", MenuKit.LEFT_SHARE, 1 - MenuKit.LEFT_SHARE)
-
-	local divider = Instance.new("Frame")
-	divider.Position = UDim2.new(MenuKit.LEFT_SHARE, 0, 0, MenuKit.PAD)
-	divider.Size = UDim2.new(0, 1, 1, -MenuKit.PAD * 2)
-	divider.BackgroundColor3 = UiTheme.Raised
-	divider.BackgroundTransparency = 0.88
-	divider.BorderSizePixel = 0
-	divider.Parent = window
+	-- The columns meet in the middle with one PAD between them, not two.
+	local leftPad = left:FindFirstChildOfClass("UIPadding")
+	if leftPad then
+		leftPad.PaddingRight = UDim.new(0, MenuKit.PAD // 2)
+	end
+	local rightPad = right:FindFirstChildOfClass("UIPadding")
+	if rightPad then
+		rightPad.PaddingLeft = UDim.new(0, MenuKit.PAD // 2)
+	end
 
 	-- Where the left column's sections go, by kind of top.
 	local RING = MenuKit.RING_SIZE
-	local large = options.largeText == true
-	local cardHeight = if large then MenuKit.LARGE_CARD_HEIGHT else MenuKit.CARD_HEIGHT
-	local rowHeight = if large then MenuKit.LARGE_ROW_HEIGHT else MenuKit.ROW_HEIGHT
-	local statText = if large then Size.Value else Size.Value - 1
+	local rowHeight = MenuKit.ROW_HEIGHT
 	local pickerCount = options.pickerCount or 0
 	local isPicker = options.pickerCaption ~= nil
 	local statsTop = if isPicker
-		then space(5) + pickerCount * cardHeight + (pickerCount - 1) * space(2) + space(4)
-		else RING + space(11)
+		then CAPTION_HEIGHT + space(1) + pickerCount * MenuKit.CARD_HEIGHT + (pickerCount - 1) * space(2) + space(3)
+		else MenuKit.PROFILE_HEIGHT + space(3)
 	local statRows = options.statRows or MenuKit.STAT_ROWS
-	local statsEnd = statsTop + space(5) + statRows * rowHeight + space(4)
-	local slotsTop = statsEnd + space(5)
-	local infoTop = if isPicker then statsEnd else slotsTop + MenuKit.SLOT_SIZE + space(4)
+	local statsBlockTop = statsTop + CAPTION_HEIGHT + space(1)
+	local statsEnd = statsBlockTop + statRows * rowHeight + space(3)
+	local slotsTop = statsEnd + space(3) + CAPTION_HEIGHT + space(1)
 
-	-- Profile top: ring, title, subtitle, thin gold bar and its label.
-	local header = Instance.new("Frame")
+	-- Profile top: a navy block with the ring, title, subtitle, XP bar and its label.
+	local header = UiTheme.block(left, "Navy", UiTheme.Radius)
 	header.Name = "Profile"
-	header.Size = UDim2.new(1, 0, 0, statsTop)
-	header.BackgroundTransparency = 1
+	header.Size = UDim2.new(1, 0, 0, MenuKit.PROFILE_HEIGHT)
 	header.Visible = not isPicker
-	header.Parent = left
-	local ring = Instance.new("Frame")
+	local ring = UiTheme.block(header, "Gold", RING // 2)
+	ring.Position = UDim2.fromOffset(space(3), (MenuKit.PROFILE_HEIGHT - RING) // 2)
 	ring.Size = UDim2.fromOffset(RING, RING)
-	ring.BackgroundTransparency = 1
-	ring.Parent = header
-	UiTheme.corner(ring, RING // 2)
-	local ringStroke = Instance.new("UIStroke")
-	ringStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	ringStroke.Color = UiTheme.Gold
-	ringStroke.Thickness = 2
-	ringStroke.Parent = ring
-	local ringCaption = UiTheme.text(ring, 9, Font.Bold, Strength.Label)
+	local ringCaption = UiTheme.text(ring, Size.Caption, Font.Bold)
 	ringCaption.Position = UDim2.fromOffset(0, 8)
-	ringCaption.Size = UDim2.new(1, 0, 0, 10)
+	ringCaption.Size = UDim2.new(1, 0, 0, 12)
 	ringCaption.TextXAlignment = Enum.TextXAlignment.Center
-	local ringValue = UiTheme.text(ring, Size.Title, Font.Heavy)
-	ringValue.Position = UDim2.fromOffset(0, 18)
-	ringValue.Size = UDim2.new(1, 0, 0, 20)
+	local ringValue = UiTheme.text(ring, Size.Heading, Font.Heavy)
+	ringValue.Position = UDim2.fromOffset(0, 20)
+	ringValue.Size = UDim2.new(1, 0, 0, 28)
 	ringValue.TextXAlignment = Enum.TextXAlignment.Center
-	local title = UiTheme.text(header, Size.Title, Font.Heavy)
-	title.Position = UDim2.fromOffset(RING + space(3), 4)
-	title.Size = UDim2.new(1, -(RING + space(3)), 0, 22)
-	local subtitle = UiTheme.text(header, Size.Small + 1, Font.Medium, Strength.Label)
-	subtitle.Position = UDim2.fromOffset(RING + space(3), 26)
-	subtitle.Size = UDim2.new(1, -(RING + space(3)), 0, 16)
-	local bar = UiTheme.bar(header, UiTheme.Bar.Xp, UiTheme.Gold)
-	bar.track.Position = UDim2.fromOffset(0, RING + space(3))
-	bar.track.BackgroundColor3 = UiTheme.Raised
-	bar.track.BackgroundTransparency = 0.88
-	local barLabel = UiTheme.text(header, Size.Small, Font.Medium, Strength.Faint)
-	barLabel.Position = UDim2.fromOffset(0, RING + space(3) + UiTheme.Bar.Xp + space(1))
-	barLabel.Size = UDim2.new(1, 0, 0, 14)
+	local textX = space(3) + RING + space(3)
+	local title = UiTheme.text(header, Size.Title + 3, Font.Heavy)
+	title.Position = UDim2.fromOffset(textX, 10)
+	title.Size = UDim2.new(1, -(textX + space(3)), 0, 24)
+	local subtitle = UiTheme.text(header, Size.Body, Font.Bold)
+	subtitle.Position = UDim2.fromOffset(textX, 32)
+	subtitle.Size = UDim2.new(1, -(textX + space(3)), 0, 16)
+	subtitle.TextColor3 = UiTheme.Gold
+	local bar = UiTheme.bar(header, UiTheme.Bar.Xp + 2, UiTheme.Gold)
+	bar.track.Position = UDim2.fromOffset(textX, 52)
+	bar.track.Size = UDim2.new(1, -(textX + space(3)), 0, UiTheme.Bar.Xp + 2)
+	local barLabel = UiTheme.text(header, Size.Caption, Font.Bold, Strength.Label)
+	barLabel.Position = UDim2.fromOffset(textX, 63)
+	barLabel.Size = UDim2.new(1, -(textX + space(3)), 0, 14)
 
 	-- Picker top: a caption and full-width cards (MenuKit.card).
 	local pickerList = Instance.new("Frame")
 	pickerList.Name = "Picker"
-	pickerList.Position = UDim2.fromOffset(0, space(5))
-	pickerList.Size = UDim2.new(1, 0, 0, statsTop - space(5))
+	pickerList.Position = UDim2.fromOffset(0, CAPTION_HEIGHT + space(1))
+	pickerList.Size = UDim2.new(1, 0, 0, statsTop - CAPTION_HEIGHT)
 	pickerList.BackgroundTransparency = 1
 	pickerList.Visible = isPicker
 	pickerList.Parent = left
@@ -298,30 +339,46 @@ function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 		caption(left, options.pickerCaption or "", 0)
 	end
 
-	-- Stat rows (label left, value right).
+	-- Stat rows (ink label left, outlined value right) on a light block.
 	local statsCaption = caption(left, options.statsCaption, statsTop)
+	local statsBlock = UiTheme.block(left, "Light", UiTheme.Radius)
+	statsBlock.Name = "Stats"
+	statsBlock.Position = UDim2.fromOffset(0, statsBlockTop)
+	statsBlock.Size = UDim2.new(1, 0, 0, statRows * rowHeight + space(3))
+	UiTheme.setOutline(statsBlock, UiTheme.Ink, UiTheme.OutlineThin)
 	local statLabels: { TextLabel } = {}
 	local statValues: { TextLabel } = {}
 	for index = 1, statRows do
 		local row = Instance.new("Frame")
-		row.Position = UDim2.fromOffset(0, statsTop + space(5) + (index - 1) * rowHeight)
-		row.Size = UDim2.new(1, 0, 0, rowHeight)
+		row.Position = UDim2.fromOffset(space(3), space(1) + 2 + (index - 1) * rowHeight)
+		row.Size = UDim2.new(1, -space(6), 0, rowHeight)
 		row.BackgroundTransparency = 1
-		row.Parent = left
-		local label = UiTheme.text(row, statText, Font.Medium, Strength.Label)
+		row.Parent = statsBlock
+		local label = UiTheme.text(row, Size.Value, Font.Medium)
 		label.Size = UDim2.fromScale(0.62, 1)
-		local value = UiTheme.text(row, statText, Font.Bold)
+		UiTheme.inkText(label)
+		local value = UiTheme.text(row, Size.Value + 1, Font.Bold)
 		value.AnchorPoint = Vector2.new(1, 0)
 		value.Position = UDim2.fromScale(1, 0)
 		value.Size = UDim2.fromScale(0.38, 1)
 		value.TextXAlignment = Enum.TextXAlignment.Right
 		table.insert(statLabels, label)
 		table.insert(statValues, value)
+		if index < statRows then
+			local rule = Instance.new("Frame")
+			rule.AnchorPoint = Vector2.new(0, 1)
+			rule.Position = UDim2.fromScale(0, 1)
+			rule.Size = UDim2.new(1, 0, 0, 1)
+			rule.BackgroundColor3 = UiTheme.Ink
+			rule.BackgroundTransparency = 0.8
+			rule.BorderSizePixel = 0
+			rule.Parent = row
+		end
 	end
 
 	-- Profile top only: the slot row under the stats.
 	if not isPicker then
-		caption(left, options.slotsCaption or "", statsEnd)
+		caption(left, options.slotsCaption or "", statsEnd + space(3))
 	end
 	local slotRow = Instance.new("Frame")
 	slotRow.Name = "Slots"
@@ -333,36 +390,74 @@ function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 	local slotLayout = Instance.new("UIListLayout")
 	slotLayout.FillDirection = Enum.FillDirection.Horizontal
 	slotLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-	slotLayout.Padding = UDim.new(0, space(2))
+	slotLayout.Padding = UDim.new(0, space(1) + 2)
 	slotLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	slotLayout.Parent = slotRow
 
-	-- Info area (what the mouse is over): the rest of the left column, or the
-	-- space between the grid and the close hint on the right.
-	local tileHeight = if large then MenuKit.LARGE_TILE_HEIGHT else MenuKit.TILE_HEIGHT
-	local gridRows = options.infoUnderGrid
-	local gridHeight = if gridRows then gridRows * (tileHeight + MenuKit.TILE_GAP) - MenuKit.TILE_GAP else nil
-	local info = Instance.new("Frame")
+	-- Right: heading with its chip, pips, the grid panel, info area, close hint.
+	local headRow = Instance.new("Frame")
+	headRow.Name = "Head"
+	headRow.Size = UDim2.new(1, -150, 0, 36)
+	headRow.BackgroundTransparency = 1
+	headRow.Parent = right
+	local headLayout = Instance.new("UIListLayout")
+	headLayout.FillDirection = Enum.FillDirection.Horizontal
+	headLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	headLayout.Padding = UDim.new(0, space(3))
+	headLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	headLayout.Parent = headRow
+	local heading = UiTheme.text(headRow, Size.Heading + 4, Font.Heavy)
+	heading.LayoutOrder = 1
+	heading.Size = UDim2.fromOffset(0, 36)
+	heading.AutomaticSize = Enum.AutomaticSize.X
+	heading.TextTruncate = Enum.TextTruncate.None
+
+	-- The chip next to the heading: Gold, a waiting pick, or a server reply.
+	local headingChip = UiTheme.block(headRow, "Green", UiTheme.Radius, UiTheme.OutlineThin)
+	headingChip.LayoutOrder = 2
+	headingChip.Size = UDim2.fromOffset(0, 30)
+	headingChip.AutomaticSize = Enum.AutomaticSize.X
+	padding(headingChip, 0, space(3), 0)
+	local headingSub = UiTheme.text(headingChip, Size.Value, Font.Bold)
+	headingSub.Size = UDim2.fromOffset(0, 30)
+	headingSub.AutomaticSize = Enum.AutomaticSize.X
+	headingSub.TextTruncate = Enum.TextTruncate.None
+
+	local pipRow = Instance.new("Frame")
+	pipRow.Name = "Pips"
+	pipRow.AnchorPoint = Vector2.new(1, 0)
+	pipRow.Position = UDim2.new(1, 0, 0, 9)
+	pipRow.Size = UDim2.fromOffset(150, 18)
+	pipRow.BackgroundTransparency = 1
+	pipRow.Parent = right
+
+	local gridRows = options.gridRows
+	local GRID_PAD = MenuKit.GRID_PAD
+	local tileButtons = options.tileButtons == true
+	local tileHeight = if tileButtons then MenuKit.BUTTON_TILE_HEIGHT else MenuKit.TILE_HEIGHT
+	local gridHeight = gridRows * (tileHeight + MenuKit.TILE_GAP) - MenuKit.TILE_GAP
+	local gridPanel = UiTheme.block(right, "Sky", UiTheme.RadiusLarge)
+	gridPanel.Name = "GridPanel"
+	gridPanel.Position = UDim2.fromOffset(0, MenuKit.GRID_TOP)
+	gridPanel.Size = UDim2.new(1, 0, 0, gridHeight + GRID_PAD * 2)
+	local grid = Instance.new("Frame")
+	grid.Name = "Grid"
+	grid.Position = UDim2.fromOffset(GRID_PAD, GRID_PAD)
+	grid.Size = UDim2.new(1, -GRID_PAD * 2, 0, gridHeight)
+	grid.BackgroundTransparency = 1
+	grid.Parent = gridPanel
+
+	-- Info area (what the mouse is over) under the grid, with a button on the
+	-- right (buy / pick) when the shown thing can be acted on.
+	local infoTop = MenuKit.GRID_TOP + gridHeight + GRID_PAD * 2 + space(3)
+	local info = UiTheme.block(right, "Light", UiTheme.Radius)
 	info.Name = "Info"
-	if gridHeight then
-		local top = MenuKit.GRID_TOP + gridHeight + space(4)
-		info.Position = UDim2.fromOffset(0, top)
-		info.Size = UDim2.new(1, 0, 1, -(top + CLOSE_HINT_SPACE))
-		info.Parent = right
-	else
-		info.Position = UDim2.fromOffset(0, infoTop)
-		info.Size = UDim2.new(1, 0, 1, -infoTop)
-		info.Parent = left
-	end
-	info.BackgroundColor3 = UiTheme.Raised
-	info.BackgroundTransparency = UiTheme.RaisedTransparency
-	info.BorderSizePixel = 0
+	info.Position = UDim2.fromOffset(0, infoTop)
+	info.Size = UDim2.new(1, 0, 1, -(infoTop + CLOSE_HINT_SPACE))
 	info.ClipsDescendants = true
-	UiTheme.corner(info, 10)
 	-- Title, "Improves" line and body stack and wrap (flow); if together they
 	-- are taller than the area, it scrolls (mouse wheel) instead of cutting
-	-- off the last lines. Sizes are never smaller than the tile text on the
-	-- right (owner 2026-10-21: the info area was unreadable).
+	-- off the last lines (owner 2026-10-21: the info area was unreadable).
 	local infoScroll = Instance.new("ScrollingFrame")
 	infoScroll.Name = "Content"
 	infoScroll.Size = UDim2.fromScale(1, 1)
@@ -372,41 +467,32 @@ function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 	infoScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	infoScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 	infoScroll.ScrollBarThickness = UiTheme.ScrollBar
-	infoScroll.ScrollBarImageColor3 = UiTheme.Text
-	infoScroll.ScrollBarImageTransparency = Strength.Faint
+	infoScroll.ScrollBarImageColor3 = UiTheme.Ink
+	infoScroll.ScrollBarImageTransparency = 0.5
 	infoScroll.Parent = info
-	padding(infoScroll, space(3), space(3), space(3))
+	padding(infoScroll, space(3), space(4), space(3))
 	stack(infoScroll, space(1))
-	local infoTitle = flow(UiTheme.text(infoScroll, Size.Title, Font.Heavy), 1)
-	local infoImproves = flow(UiTheme.text(infoScroll, if large then Size.Value else Size.Body, Font.Bold), 2)
+	local infoTitle = flow(UiTheme.text(infoScroll, Size.Title + 3, Font.Heavy), 1)
+	local infoImproves = flow(UiTheme.text(infoScroll, Size.Value, Font.Medium), 2)
+	UiTheme.inkText(infoImproves)
 	infoImproves.TextColor3 = UiTheme.Improves
-	local infoBody = flow(UiTheme.text(infoScroll, if large then Size.Value else Size.Body, Font.Regular, Strength.Label), 3)
+	local infoBody = flow(UiTheme.text(infoScroll, Size.Value, Font.Regular), 3)
+	UiTheme.inkText(infoBody)
 	infoBody.RichText = true
 
-	-- Right: heading, sub line, pips, grid, close hint.
-	local heading = UiTheme.text(right, Size.Heading, Font.Heavy)
-	heading.Size = UDim2.new(1, -170, 0, 28)
-	local headingSub = UiTheme.text(right, Size.Small + 1, Font.Bold)
-	headingSub.Position = UDim2.fromOffset(0, 28)
-	headingSub.Size = UDim2.new(1, 0, 0, 16)
-	local pipRow = Instance.new("Frame")
-	pipRow.Name = "Pips"
-	pipRow.AnchorPoint = Vector2.new(1, 0)
-	pipRow.Position = UDim2.new(1, 0, 0, 10)
-	pipRow.Size = UDim2.fromOffset(160, 8)
-	pipRow.BackgroundTransparency = 1
-	pipRow.Parent = right
+	local infoButton = blockButton(info, "Green", UiTheme.Radius)
+	infoButton.Name = "Action"
+	infoButton.AnchorPoint = Vector2.new(1, 1) -- bottom right (owner 2026-10-22)
+	infoButton.Position = UDim2.new(1, -space(4), 1, -space(4))
+	infoButton.Size = UDim2.fromOffset(MenuKit.INFO_BUTTON_WIDTH, 52)
+	infoButton.Visible = false
+	UiTheme.pressable(infoButton)
+	local infoButtonText = UiTheme.text(infoButton, Size.Heading, Font.Heavy)
+	infoButtonText.Size = UDim2.fromScale(1, 1)
+	infoButtonText.TextXAlignment = Enum.TextXAlignment.Center
 
-	local grid = Instance.new("Frame")
-	grid.Name = "Grid"
-	grid.Position = UDim2.fromOffset(0, MenuKit.GRID_TOP)
-	grid.Size = if gridHeight
-		then UDim2.new(1, 0, 0, gridHeight)
-		else UDim2.new(1, 0, 1, -(MenuKit.GRID_TOP + CLOSE_HINT_SPACE))
-	grid.BackgroundTransparency = 1
-	grid.Parent = right
 
-	local closeHint = UiTheme.text(right, Size.Small, Font.Medium, Strength.Faint)
+	local closeHint = UiTheme.text(right, Size.Small, Font.Bold, Strength.Label)
 	closeHint.AnchorPoint = Vector2.new(1, 1)
 	closeHint.Position = UDim2.fromScale(1, 1)
 	closeHint.Size = UDim2.fromOffset(160, 16)
@@ -415,14 +501,16 @@ function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 
 	local function fitToScreen()
 		local viewport = Workspace.CurrentCamera.ViewportSize
-		fit.Scale = math.min(UiTheme.MenuScale, (viewport.X - 32) / MenuKit.WIDTH, (viewport.Y - 32) / MenuKit.HEIGHT)
+		fit.Scale = math.min(UiTheme.MenuScale, (viewport.X - 48) / MenuKit.WIDTH, (viewport.Y - 64) / MenuKit.HEIGHT)
 	end
 
-	return {
+	local menu: Menu = {
 		screen = screen,
 		window = window,
 		left = left,
 		right = right,
+		titleLabel = titleLabel,
+		closeButton = closeButton,
 		ringCaption = ringCaption,
 		ringValue = ringValue,
 		title = title,
@@ -434,75 +522,73 @@ function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 		statsCaption = statsCaption,
 		statLabels = statLabels,
 		statValues = statValues,
+		heading = heading,
+		headingChip = headingChip,
+		headingSub = headingSub,
+		pipRow = pipRow,
+		grid = grid,
 		infoScroll = infoScroll,
 		infoTitle = infoTitle,
 		infoImproves = infoImproves,
 		infoBody = infoBody,
-		heading = heading,
-		headingSub = headingSub,
-		pipRow = pipRow,
-		grid = grid,
+		infoButton = infoButton,
+		infoButtonText = infoButtonText,
+		infoAction = nil,
 		closeHint = closeHint,
+		tileHeight = tileHeight,
+		tileButtons = tileButtons,
 		fitToScreen = fitToScreen,
-		largeText = large,
 	}
+	infoButton.Activated:Connect(function()
+		local action = menu.infoAction
+		if action then
+			action()
+		end
+	end)
+	return menu
+end
+
+-- The chip next to the heading: text on a coloured block (Green = Gold,
+-- Gold = something to do, Red = a warning, Navy = plain information).
+function MenuKit.setSub(menu: Menu, text: string, fill: UiTheme.FillName)
+	menu.headingSub.Text = text
+	UiTheme.setFill(menu.headingChip, fill)
 end
 
 -- A full-width picker card: a big icon, a name and a short detail on the right
 -- ("2/6", "Lv 2"). Style it with MenuKit.styleCard.
 function MenuKit.card(menu: Menu, icon: string, name: string, order: number): Card
-	local button = Instance.new("TextButton")
+	local button = blockButton(menu.pickerList, "Blue", UiTheme.Radius)
 	button.Name = name
 	button.LayoutOrder = order
-	local large = menu.largeText
-	button.Size = UDim2.new(1, 0, 0, if large then MenuKit.LARGE_CARD_HEIGHT else MenuKit.CARD_HEIGHT)
-	button.BackgroundColor3 = UiTheme.Raised
-	button.AutoButtonColor = false
-	button.Text = ""
-	button.Parent = menu.pickerList
-	UiTheme.corner(button, 10)
-	local line = Instance.new("UIStroke")
-	line.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	line.Color = UiTheme.Gold
-	line.Thickness = 1
-	line.Parent = button
-	local ICON = if large then 36 else 32
-	local iconLabel = UiTheme.text(button, if large then 30 else 26, Font.Bold)
+	button.Size = UDim2.new(1, 0, 0, MenuKit.CARD_HEIGHT)
+	UiTheme.pressable(button)
+	local ICON = 36
+	local iconLabel = UiTheme.text(button, 30, Font.Bold)
 	iconLabel.Position = UDim2.fromOffset(space(3), 0)
 	iconLabel.Size = UDim2.new(0, ICON, 1, 0)
 	iconLabel.TextXAlignment = Enum.TextXAlignment.Center
 	iconLabel.Text = icon
-	local nameLabel = UiTheme.text(button, if large then Size.Title else Size.Value, Font.Heavy)
+	local nameLabel = UiTheme.text(button, Size.Title + 1, Font.Heavy)
 	nameLabel.Position = UDim2.fromOffset(space(3) + ICON + space(3), 0)
 	nameLabel.Size = UDim2.new(1, -(space(6) + ICON + space(3) + 50), 1, 0)
 	nameLabel.Text = name
-	if large then
-		-- Long names shrink a little rather than run into the detail.
-		nameLabel.TextScaled = true
-		local limit = Instance.new("UITextSizeConstraint")
-		limit.MaxTextSize = Size.Title
-		limit.MinTextSize = Size.Body
-		limit.Parent = nameLabel
-	end
-	local detail = UiTheme.text(button, if large then Size.Value else Size.Small + 1, Font.Bold, Strength.Label)
+	local detail = UiTheme.text(button, Size.Value + 1, Font.Bold)
 	detail.AnchorPoint = Vector2.new(1, 0)
 	detail.Position = UDim2.new(1, -space(3), 0, 0)
 	detail.Size = UDim2.new(0, 50, 1, 0)
 	detail.TextXAlignment = Enum.TextXAlignment.Right
-	return { button = button, line = line, icon = iconLabel, name = nameLabel, detail = detail, hover = false }
+	return { button = button, icon = iconLabel, name = nameLabel, detail = detail, hover = false }
 end
 
--- Card looks: selected = lit with a solid gold line; hover = lit with a faint one.
+-- Card looks: selected = gold; hover = a white outline.
 function MenuKit.styleCard(card: Card, selected: boolean)
-	card.button.BackgroundTransparency = if selected or card.hover
-		then UiTheme.RaisedHoverTransparency
-		else UiTheme.RaisedTransparency
-	card.line.Transparency = if selected then 0 elseif card.hover then 0.6 else 1
-	card.detail.TextColor3 = if selected then UiTheme.Gold else UiTheme.Text
-	card.detail.TextTransparency = if selected then 0 else Strength.Label
+	UiTheme.setFill(card.button, if selected then "Gold" else "Blue")
+	UiTheme.setOutline(card.button, if card.hover and not selected then UiTheme.Text else UiTheme.Ink)
 end
 
--- Fills the stat rows: { label, value, improved } (improved values in gold).
+-- Fills the stat rows: { label, value, improved }. Values are always white
+-- (owner 2026-10-22: no gold for improved numbers); `improved` is ignored.
 -- Rows past the end of `lines` are left empty.
 function MenuKit.setStats(menu: Menu, lines: { { any } })
 	for index, label in menu.statLabels do
@@ -510,7 +596,6 @@ function MenuKit.setStats(menu: Menu, lines: { { any } })
 		local value = menu.statValues[index]
 		label.Text = if line then tostring(line[1]) else ""
 		value.Text = if line then tostring(line[2]) else ""
-		value.TextColor3 = if line and line[3] then UiTheme.Gold else UiTheme.Text
 	end
 end
 
@@ -525,24 +610,25 @@ function MenuKit.showInfo(menu: Menu, title: string, improves: string?, body: st
 	menu.infoBody.Text = body
 end
 
+-- The info area's button: `text` nil hides it. `action` runs on click.
+function MenuKit.setInfoButton(menu: Menu, text: string?, fill: UiTheme.FillName, action: (() -> ())?)
+	local shown = text ~= nil
+	menu.infoButton.Visible = shown
+	menu.infoButtonText.Text = text or ""
+	UiTheme.setFill(menu.infoButton, fill)
+	menu.infoAction = action
+	-- The text makes room for the button.
+	local room = if shown then MenuKit.INFO_BUTTON_WIDTH + space(4) else 0
+	menu.infoScroll.Size = UDim2.new(1, -room, 1, 0)
+end
+
 -- A slot in the left column's slot row (a short tag, or an icon).
 function MenuKit.slot(menu: Menu, tag: string, order: number): Slot
-	local button = Instance.new("TextButton")
+	local button = blockButton(menu.slotRow, "Deep", UiTheme.Radius, UiTheme.OutlineThin)
 	button.Name = tag
 	button.LayoutOrder = order
 	button.Size = UDim2.fromOffset(MenuKit.SLOT_SIZE, MenuKit.SLOT_SIZE)
-	button.BackgroundColor3 = UiTheme.Raised
-	button.BackgroundTransparency = UiTheme.RaisedHoverTransparency
-	button.AutoButtonColor = false
-	button.Text = ""
-	button.Parent = menu.slotRow
-	UiTheme.corner(button)
-	local line = Instance.new("UIStroke")
-	line.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	line.Color = UiTheme.Gold
-	line.Thickness = 1
-	line.Transparency = 1
-	line.Parent = button
+	UiTheme.pressable(button)
 	local label = UiTheme.text(button, Size.Caption, Font.Heavy)
 	label.Position = UDim2.fromOffset(2, 0)
 	label.Size = UDim2.new(1, -4, 1, 0)
@@ -550,12 +636,17 @@ function MenuKit.slot(menu: Menu, tag: string, order: number): Slot
 	label.TextScaled = true -- long names shrink to fit
 	label.Text = tag
 	local limit = Instance.new("UITextSizeConstraint")
-	limit.MaxTextSize = 20
+	limit.MaxTextSize = 14
 	limit.Parent = label
-	return { button = button, label = label, line = line }
+	return { button = button, label = label, selected = false }
 end
 
--- One dot per step on the right of the heading. Returns them in order.
+-- Slot looks: the one shown in the info area is gold.
+function MenuKit.styleSlot(slot: Slot)
+	UiTheme.setFill(slot.button, if slot.selected then "Gold" else "Deep")
+end
+
+-- One square per step on the right of the heading. Returns them in order.
 function MenuKit.pips(menu: Menu, count: number): { Frame }
 	menu.pipRow:ClearAllChildren()
 	local layout = Instance.new("UIListLayout")
@@ -566,108 +657,115 @@ function MenuKit.pips(menu: Menu, count: number): { Frame }
 	layout.Parent = menu.pipRow
 	local pips: { Frame } = {}
 	for index = 1, count do
-		local pip = Instance.new("Frame")
+		local pip = UiTheme.block(menu.pipRow, "Navy", 5, UiTheme.OutlineThin)
 		pip.LayoutOrder = index
-		pip.Size = UDim2.fromOffset(8, 8)
-		pip.BorderSizePixel = 0
-		pip.Parent = menu.pipRow
-		UiTheme.corner(pip, 4)
+		pip.Size = UDim2.fromOffset(18, 18)
 		table.insert(pips, pip)
 	end
 	return pips
 end
 
--- A pip: "done" gold, "open" half gold, otherwise faint.
+-- A pip: "done" gold, "open" (waiting) green, otherwise navy.
 function MenuKit.setPip(pip: Frame, state: string)
-	pip.BackgroundColor3 = if state == "done" or state == "open" then UiTheme.Gold else UiTheme.Text
-	pip.BackgroundTransparency = if state == "done" then 0 elseif state == "open" then 0.5 else 0.85
+	UiTheme.setFill(pip, if state == "done" then "Gold" elseif state == "open" then "Green" else "Navy")
 end
 
--- A grid tile at position `index` (left to right, top to bottom, 3 across).
+-- A grid tile at position `index` (left to right, top to bottom, 3 across):
+-- a name and an orange "Improves: ..." line only.
 function MenuKit.tile(menu: Menu, index: number): Tile
 	local column = (index - 1) % MenuKit.COLUMNS
 	local row = (index - 1) // MenuKit.COLUMNS
 	local columns = MenuKit.COLUMNS
 	local gap = MenuKit.TILE_GAP
-	local large = menu.largeText
-	local height = if large then MenuKit.LARGE_TILE_HEIGHT else MenuKit.TILE_HEIGHT
-	local button = Instance.new("TextButton")
+	local height = menu.tileHeight
+	local button = blockButton(menu.grid, "Light", UiTheme.Radius)
 	button.Name = `Tile{index}`
 	button.Position = UDim2.new(column / columns, column * gap / columns, 0, row * (height + gap))
 	button.Size = UDim2.new(1 / columns, -gap * (columns - 1) / columns, 0, height)
-	button.BackgroundColor3 = UiTheme.Raised
-	button.AutoButtonColor = false
-	button.Text = ""
-	button.Parent = menu.grid
-	UiTheme.corner(button, 10)
-	padding(button, space(3), space(3), space(3))
-	local line = Instance.new("UIStroke")
-	line.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	line.Color = UiTheme.Gold
-	line.Thickness = 1
-	line.Parent = button
 
-	-- Text sizes: name, improves line, text, corner line.
-	local nameSize, improvesSize, textSize, cornerSize = Size.Body, Size.Small - 1, Size.Small, Size.Small
-	local cornerHeight = 14
-	if large then
-		nameSize, improvesSize, textSize, cornerSize = Size.Value, Size.Small, Size.Body - 1, Size.Body
-		cornerHeight = 16
-	end
-	-- Name, improves line and text stack (flow), so a two-line name or
-	-- improves line moves the text down; the stack stops above the corner line.
+	-- Name and improves line stack (flow), so a two-line name moves the
+	-- improves line down; the stack is clipped at the tile's edge.
 	local body = Instance.new("Frame")
 	body.Name = "Text"
-	body.Size = UDim2.new(1, 0, 1, -(cornerHeight + 2))
+	local buttonRoom = if menu.tileButtons then MenuKit.TILE_BUTTON_HEIGHT + space(2) else 0
+	body.Size = UDim2.new(1, 0, 1, -buttonRoom)
 	body.BackgroundTransparency = 1
 	body.ClipsDescendants = true
 	body.Parent = button
+	padding(body, space(2) + 2, space(3), space(2))
 	stack(body, space(1))
-	local name = flow(UiTheme.text(body, nameSize, Font.Heavy), 1)
-	local improves = flow(UiTheme.text(body, improvesSize, Font.Bold), 2)
+	local name = flow(UiTheme.text(body, Size.Value + 1, Font.Heavy), 1)
+	local improves = flow(UiTheme.text(body, Size.Small + 1, Font.Medium), 2)
+	UiTheme.inkText(improves)
 	improves.TextColor3 = UiTheme.Improves
-	local text = flow(UiTheme.text(body, textSize, Font.Regular), 3)
-	local corner = UiTheme.text(button, cornerSize, Font.Heavy)
-	corner.AnchorPoint = Vector2.new(0, 1)
-	corner.Position = UDim2.fromScale(0, 1)
-	corner.Size = UDim2.new(1, 0, 0, cornerHeight)
 
-	local tile: Tile = { button = button, line = line, name = name, improves = improves, text = text, corner = corner, hover = false }
-	return tile
+	-- A green check in the corner when owned or taken.
+	local check = UiTheme.block(button, "Green", 13, UiTheme.OutlineThin)
+	check.Name = "Check"
+	check.AnchorPoint = Vector2.new(0.5, 0.5)
+	check.Position = UDim2.new(1, -4, 0, 4)
+	check.Size = UDim2.fromOffset(26, 26)
+	check.ZIndex = 3
+	check.Visible = false
+	local tick = UiTheme.text(check, Size.Value, Font.Heavy)
+	tick.Size = UDim2.fromScale(1, 1)
+	tick.TextXAlignment = Enum.TextXAlignment.Center
+	tick.ZIndex = 4
+	tick.Text = "✓"
+
+	-- The small price button at the bottom left (shown with setTileButton).
+	local price = blockButton(button, "Green", UiTheme.Radius - 2, UiTheme.OutlineThin)
+	price.Name = "Price"
+	price.AnchorPoint = Vector2.new(0, 1)
+	price.Position = UDim2.new(0, space(3), 1, -space(2) - 2)
+	price.Size = UDim2.fromOffset(0, MenuKit.TILE_BUTTON_HEIGHT)
+	price.AutomaticSize = Enum.AutomaticSize.X
+	price.Visible = false
+	price.ZIndex = 2
+	UiTheme.pressable(price)
+	padding(price, 0, space(3), 0)
+	local priceText = UiTheme.text(price, Size.Value, Font.Bold)
+	priceText.Size = UDim2.fromOffset(0, MenuKit.TILE_BUTTON_HEIGHT)
+	priceText.AutomaticSize = Enum.AutomaticSize.X
+	priceText.TextTruncate = Enum.TextTruncate.None
+	priceText.ZIndex = 3
+
+	return {
+		button = button,
+		name = name,
+		improves = improves,
+		check = check,
+		price = price,
+		priceText = priceText,
+		hover = false,
+		selected = false,
+	}
 end
 
--- Tile looks: "taken" (lit, gold rim, gold name), "open" (can be picked or
--- bought; gold rim and name on hover) or "locked" (greyed, not clickable).
--- `cornerText` / `cornerColor` set the bottom line (TAKEN, OWNED, a price).
-function MenuKit.styleTile(tile: Tile, state: string, cornerText: string, cornerColor: Color3?)
-	tile.button.Active = state == "open"
-	tile.corner.Text = cornerText
-	tile.corner.TextColor3 = cornerColor or UiTheme.Gold
-	if state == "taken" then
-		tile.button.BackgroundTransparency = UiTheme.RaisedHoverTransparency
-		tile.line.Transparency = 0
-		tile.name.TextColor3 = UiTheme.Gold
-		tile.name.TextTransparency = 0
-		tile.improves.TextTransparency = 0
-		tile.text.TextTransparency = Strength.Label
-		tile.corner.TextTransparency = 0
-	elseif state == "open" then
-		tile.button.BackgroundTransparency = if tile.hover then UiTheme.RaisedHoverTransparency else UiTheme.RaisedTransparency
-		tile.line.Transparency = if tile.hover then 0.4 else 1
-		tile.name.TextColor3 = if tile.hover then UiTheme.Gold else UiTheme.Text
-		tile.name.TextTransparency = 0
-		tile.improves.TextTransparency = 0
-		tile.text.TextTransparency = Strength.Label
-		tile.corner.TextTransparency = 0
-	else
-		tile.button.BackgroundTransparency = UiTheme.DisabledTransparency
-		tile.line.Transparency = 1
-		tile.name.TextColor3 = UiTheme.Text
-		tile.name.TextTransparency = Strength.Faint
-		tile.improves.TextTransparency = 0.5
-		tile.text.TextTransparency = Strength.Faint
-		tile.corner.TextTransparency = Strength.Faint
-	end
+-- A tile's small price button: `text` nil hides it.
+function MenuKit.setTileButton(tile: Tile, text: string?, fill: UiTheme.FillName)
+	tile.price.Visible = text ~= nil
+	tile.priceText.Text = text or ""
+	UiTheme.setFill(tile.price, fill)
+end
+
+-- Tile looks: "taken" (green with a check), "open" (light; gold on hover or
+-- while shown in the info area) or "locked" (grey, faint, not clickable).
+-- The tile shown in the info area also gets a white outline.
+function MenuKit.styleTile(tile: Tile, state: string)
+	tile.button.Active = state ~= "locked"
+	tile.check.Visible = state == "taken"
+	local lit = tile.hover or tile.selected
+	local fill: UiTheme.FillName = if state == "taken"
+		then "Green"
+		elseif state == "locked" then "Grey"
+		elseif lit then "Gold"
+		else "Light"
+	UiTheme.setFill(tile.button, fill)
+	UiTheme.setOutline(tile.button, if tile.selected then UiTheme.Text else UiTheme.Ink)
+	local faint = if state == "locked" then Strength.Faint else 0
+	tile.name.TextTransparency = faint
+	tile.improves.TextTransparency = faint
 end
 
 return MenuKit

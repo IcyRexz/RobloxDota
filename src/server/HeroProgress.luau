@@ -24,6 +24,9 @@
 -- Remote: ChooseMastery (client -> server): (mastery id: string). Ignored unless
 --   it names a mastery not yet taken, a point is waiting and the player is
 --   within the request limit.
+-- Remote: MasteryPicked (server -> client only; the server never listens):
+--   (player, mastery id) when a pick is accepted, for everyone's popup
+--   (owner 2026-10-23).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -65,6 +68,10 @@ end
 local function levelOf(player: Player): number
 	local progress = progressOf[player]
 	return if progress then progress.level else 1
+end
+
+function HeroProgress.level(player: Player): number
+	return levelOf(player)
 end
 
 function HeroProgress.hasMastery(player: Player, id: string): boolean
@@ -213,6 +220,10 @@ local chooseEvent = Instance.new("RemoteEvent")
 chooseEvent.Name = "ChooseMastery"
 chooseEvent.Parent = ReplicatedStorage
 
+local pickedEvent = Instance.new("RemoteEvent")
+pickedEvent.Name = "MasteryPicked"
+pickedEvent.Parent = ReplicatedStorage
+
 chooseEvent.OnServerEvent:Connect(function(player: Player, id: unknown)
 	local info = MageAbilities.mastery(id)
 	if not info then
@@ -230,6 +241,7 @@ chooseEvent.OnServerEvent:Connect(function(player: Player, id: unknown)
 	publish(player, progress)
 	applyStats(player, HeroProgress.maxHealth(player) - oldMaxHealth)
 	refreshArmy()
+	pickedEvent:FireAllClients(player, info.id)
 	print(`[HeroProgress] {player.Name} took mastery {info.id}`)
 end)
 

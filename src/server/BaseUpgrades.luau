@@ -1,11 +1,11 @@
 --!strict
 -- Base upgrades (owner 2026-10-21; numbers in Config.Base): players spend their
 -- own Gold at the Upgrade Workbench.
---  * Three categories (Config.Base.Categories): Buildings, Melee Units and
+--  * Three categories (Config.Base.Categories): Buildings, Warriors and
 --    Archers, each a 3x2 grid of upgrades (Config.Base.Upgrades), each bought
 --    once for its own cost, in any order. BaseUpgradeRules works out what they
 --    do.
---  * Melee Units / Archers improve our soldiers of that kind. Minions.server
+--  * Warriors / Archers improve our soldiers of that kind. Minions.server
 --    reads BaseUpgrades.unitMods for new soldiers and listens to
 --    BaseUpgrades.Changed to update living ones. Zombies never get them.
 --  * Buildings improve our towers, barracks and Base Core. Max health is set

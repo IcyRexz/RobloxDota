@@ -23,7 +23,9 @@ Use `--!strict`, descriptive service/controller names, immutable public config a
 
 Attack and movement animations follow the three approved patterns in `docs/04_CONTROLS_ANIMATIONS.md` ("Standard way to animate attacks"): client-side joint poses through `src/shared/JointPose.luau` triggered by a server event (zombie bite, archer draw); a per-frame rotation added on top of the animation with `JointPose.addRotation` from PreSimulation, for joints the animations hide (Brute smash, owner 2026-10-22); or Roblox default animation tracks played by the server (sword swing). Never edit `Motor6D.C0` directly.
 
-All UI follows the design system in `docs/11_UI_DESIGN.md` (owner decision 2026-10-21): read fonts, colours, radii and bar sizes from `src/shared/UiTheme.luau`; never hard-code them in UI scripts.
+Ground placement (owner 2026-10-23): anything put on or moved onto the ground (bodies, rings, puddles, markers, spawns, effects) finds the real ground with a raycast (Terrain and floors, ignoring characters and units) and rests its lowest point on it. Never trust a height formula alone (root minus HipHeight, `Landscape.heightAt`). Check on, above or below for flat ground, hills and scaled units, and say what to look for in the Studio check.
+
+All UI follows the design system in `docs/11_UI_DESIGN.md` (owner decision 2026-10-21; blocky restyle 2026-10-22): build panels and buttons with `UiTheme.block` / `styleBlock` and text with `UiTheme.text`; read fonts, colours, radii and bar sizes from `src/shared/UiTheme.luau`; never hard-code them in UI scripts.
 
 Use the `.luau` extension (`.server.luau`, `.client.luau`, plain `.luau` for ModuleScripts).
 

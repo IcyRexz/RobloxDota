@@ -61,7 +61,7 @@ Task list for the co-op base-defense shooter (genre switch 2026-10-20). There is
 
 ### T11 — Gold economy
 - Depends on: T06 T09. Reuses: `CombatService` killer report.
-- Do: Gold per kill (per-player or team pool per owner decision); server-owned balance; HUD counter; reset each mission. Done so far: per-player Gold from last hits, TEMPORARY starting Gold, and base upgrades at the Upgrade Workbench (Buildings, Melee Units, Archers; owner 2026-10-21).
+- Do: Gold per kill (per-player or team pool per owner decision); server-owned balance; HUD counter; reset each mission. Done so far: per-player Gold from last hits, TEMPORARY starting Gold, and base upgrades at the Upgrade Workbench (Buildings, Warriors, Archers; owner 2026-10-21, Warriors renamed from Melee Units 2026-10-22).
 - Done when: Gold only changes on server-confirmed kills and purchases. Verify: A07 A08.
 
 ### T12 — Build phase and build nodes

@@ -7,20 +7,23 @@
 --  * The workbench near the spawn has a "Upgrade Workbench" label and a
 --    ProximityPrompt (F, "Open Upgrades"; E is Teleport). Triggering it opens
 --    this menu; nothing else does. Walking away (or dying) closes it, as does F.
---  * Left: UPGRADES, three full-width cards (Buildings, Melee Units, Archers:
+--  * Left: UPGRADES, three full-width cards (Buildings, Warriors, Archers:
 --    big icon, name, "2/6"; click to select); then what the selected category
 --    improves (BUILDINGS, SWORDSMAN or ARCHER) with its current numbers:
 --    tower, barracks and core numbers, or soldier stats with everything bought
 --    and the heroes' army buffs, and how many each barracks sends per group
---    (improved numbers in gold).
+--    (all values in white, owner 2026-10-22).
 --  * Right: the category's name, its six upgrades (each bought once for its
---    own price, in any order; each names what it improves in orange), and
---    under them the info area showing whatever the mouse is over (owner
---    2026-10-21). Text is MenuKit's large size. The line under the heading
---    shows your Gold in gold, and the server's reply for a moment ("Not Enough
---    Gold", "Too far from the workbench", or what was bought). Owned tiles stay
---    lit with a gold rim and "OWNED"; prices show in gold, or enemy red when
---    you cannot afford them.
+--    own price, in any order; a tile shows only the name, what it improves
+--    and a small price button, owner 2026-10-22), and under them the info
+--    area: clicking a card or tile pins it there, hovering previews (owner
+--    2026-10-22), with the full text and a buy button in its bottom-right
+--    corner. Only the green Gold buttons buy, never the tile itself (owner
+--    2026-10-22); they turn grey when you cannot afford the upgrade. No cost
+--    or "shared" line in the text. The chip by the heading
+--    shows your Gold, and the server's reply for a moment ("Not Enough Gold",
+--    "Too far from the workbench", or what was bought). Owned tiles turn green
+--    with a check. The window is titled "Base Upgrades" (owner 2026-10-22).
 -- Reads ReplicatedStorage's Owned<UpgradeId> / Army* attributes, our
 -- buildings' BaseMaxHealth / MaxHealth, and the player's Gold attribute.
 -- Display only: the server (BaseUpgrades) checks and applies every purchase
@@ -39,7 +42,6 @@ local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local BaseConfig = Config.Base
 local formatNumber = MenuKit.formatNumber
-local GOLD_HEX = MenuKit.GOLD_HEX
 
 local CLOSE_DISTANCE = BaseConfig.WorkbenchRange -- the server's purchase range
 local MESSAGE_SECONDS = 2.5
@@ -62,6 +64,9 @@ local CATEGORY_TEXT: { [string]: string } = {
 
 type Category = { id: string, name: string, icon: string, unit: string }
 type Describe = () -> (string, string?, string) -- title, improves, body
+-- The info area's button for what is shown: text (nil = none), fill, action.
+type Button = () -> (string?, UiTheme.FillName, (() -> ())?)
+type InfoView = { describe: Describe, button: Button?, tile: MenuKit.Tile? }
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -76,13 +81,14 @@ for _, list in BaseConfig.Upgrades do
 end
 
 local menu = MenuKit.new("BaseUpgrades", playerGui, {
+	title = "Base Upgrades",
 	statsCaption = "",
 	pickerCaption = "UPGRADES",
 	pickerCount = #BaseConfig.Categories,
 	closeText = "F to close",
 	statRows = 6, -- Buildings shows six numbers; soldiers five
-	infoUnderGrid = math.ceil(mostTiles / MenuKit.COLUMNS),
-	largeText = true,
+	gridRows = math.ceil(mostTiles / MenuKit.COLUMNS),
+	tileButtons = true, -- a small price button on each tile (owner 2026-10-22)
 })
 
 -- Helpers ---------------------------------------------------------------------------
@@ -184,19 +190,51 @@ local function statLines(category: Category): { { any } }
 	}
 end
 
--- Info area: shows what the mouse is over and keeps the last one shown.
-local currentInfo: Describe
+-- Info area (owner 2026-10-22: you may only want to read): clicking a card or
+-- tile pins it there; hovering something else previews it, and moving off it
+-- goes back to the pinned one, so the mouse can cross other tiles on its way
+-- to the buy button.
+local pinned: InfoView
+local currentInfo: InfoView
+local styleTiles: () -> () -- defined below
 
-local function showInfo(describe: Describe)
-	currentInfo = describe
-	MenuKit.showInfo(menu, describe())
+local function renderInfo()
+	MenuKit.showInfo(menu, currentInfo.describe())
+	if currentInfo.button then
+		MenuKit.setInfoButton(menu, currentInfo.button())
+	else
+		MenuKit.setInfoButton(menu, nil, "Green", nil)
+	end
 end
 
-local function describeCategory(category: Category): Describe
-	return function()
-		local done, total = progressOf(category)
-		return category.name, nil, `{CATEGORY_TEXT[category.id] or ""}\n\nUpgrades owned <b>{done}</b> / {total}`
+local function showInfo(view: InfoView)
+	currentInfo = view
+	renderInfo()
+	styleTiles()
+end
+
+local function pin(view: InfoView)
+	pinned = view
+	showInfo(view)
+end
+
+local function preview(view: InfoView)
+	showInfo(view)
+end
+
+local function endPreview(view: InfoView)
+	if currentInfo == view and pinned then
+		showInfo(pinned)
 	end
+end
+
+local function describeCategory(category: Category): InfoView
+	return {
+		describe = function()
+			local done, total = progressOf(category)
+			return category.name, nil, `{CATEGORY_TEXT[category.id] or ""}\n\nUpgrades owned <b>{done}</b> / {total}`
+		end,
+	}
 end
 
 -- Categories ----------------------------------------------------------------------------
@@ -206,23 +244,25 @@ local selectCategory: (Category) -> () -- defined below
 
 type CategoryCard = { category: Category, card: MenuKit.Card }
 local categoryCards: { CategoryCard } = {}
+local categoryViews: { [string]: InfoView } = {}
 
 for index, category in BaseConfig.Categories do
 	local card = MenuKit.card(menu, category.icon, category.name, index)
 	table.insert(categoryCards, { category = category, card = card })
-	local describe = describeCategory(category)
+	local view = describeCategory(category)
+	categoryViews[category.id] = view
 	card.button.MouseEnter:Connect(function()
 		card.hover = true
 		MenuKit.styleCard(card, category == selected)
-		showInfo(describe)
+		preview(view)
 	end)
 	card.button.MouseLeave:Connect(function()
 		card.hover = false
 		MenuKit.styleCard(card, category == selected)
+		endPreview(view)
 	end)
 	card.button.Activated:Connect(function()
 		selectCategory(category)
-		showInfo(describe)
 	end)
 end
 
@@ -230,45 +270,60 @@ end
 
 local pips: { Frame } = {}
 
--- A tile and how to read its state: (state, corner text, corner colour).
-type UpgradeTile = { tile: MenuKit.Tile, state: () -> (string, string, Color3?) }
+-- A tile, how to read its state ("taken" or "open") and its price.
+type UpgradeTile = { tile: MenuKit.Tile, state: () -> string, cost: number }
 local tiles: { UpgradeTile } = {}
 
-local function priceColor(cost: number): Color3
-	return if gold() >= cost then UiTheme.Gold else UiTheme.Enemy
+local function styleUpgrade(view: UpgradeTile)
+	view.tile.selected = pinned ~= nil and pinned.tile == view.tile
+	local state = view.state()
+	MenuKit.styleTile(view.tile, state)
+	-- Price button: green, grey when you cannot afford it; gone once owned (the check shows).
+	if state == "taken" then
+		MenuKit.setTileButton(view.tile, nil, "Green")
+	else
+		MenuKit.setTileButton(view.tile, `{view.cost} Gold`, if gold() >= view.cost then "Green" else "Grey")
+	end
 end
 
-local function styleUpgrade(view: UpgradeTile)
-	MenuKit.styleTile(view.tile, view.state())
+function styleTiles()
+	for _, view in tiles do
+		styleUpgrade(view)
+	end
 end
 
 local function addTile(
 	index: number,
 	name: string,
 	improves: string,
-	text: string,
-	state: () -> (string, string, Color3?),
-	describe: Describe,
+	cost: number,
+	state: () -> string,
+	info: InfoView,
 	buy: () -> ()
 )
 	local tile = MenuKit.tile(menu, index)
 	tile.name.Text = name
 	tile.improves.Text = `Improves: {improves}`
-	tile.text.Text = text
-	local view: UpgradeTile = { tile = tile, state = state }
+	info.tile = tile
+	local view: UpgradeTile = { tile = tile, state = state, cost = cost }
 	table.insert(tiles, view)
 	tile.button.MouseEnter:Connect(function()
 		tile.hover = true
-		styleUpgrade(view)
-		showInfo(describe)
+		preview(info)
 	end)
 	tile.button.MouseLeave:Connect(function()
 		tile.hover = false
 		styleUpgrade(view)
+		endPreview(info)
 	end)
+	-- Clicking the tile only shows it; buying takes a green Gold button (owner 2026-10-22).
 	tile.button.Activated:Connect(function()
+		pin(info)
+	end)
+	tile.price.Activated:Connect(function()
+		pin(info)
 		if view.state() == "open" then
-			buy() -- the server checks Gold and replies
+			buy()
 		end
 	end)
 end
@@ -281,25 +336,33 @@ local function buildGrid()
 	local list = BaseConfig.Upgrades[category.id]
 	pips = MenuKit.pips(menu, #list)
 	for index, info in list do
-		local function state(): (string, string, Color3?)
-			if isOwned(info.id) then
-				return "taken", "OWNED", nil
-			end
-			return "open", `{info.cost} Gold`, priceColor(info.cost)
+		local function state(): string
+			return if isOwned(info.id) then "taken" else "open"
 		end
-		addTile(index, info.name, info.improves, info.text, state, function()
-			local status = if isOwned(info.id) then `<font color="#{GOLD_HEX}">Owned</font>` else "Click to buy it."
-			return info.name, info.improves, `{info.text}\n\nCost <b>{info.cost}</b> Gold   {status}`
-		end, function()
-			requestEvent:FireServer(category.id, info.id)
-		end)
+		local function buy()
+			if not isOwned(info.id) then
+				requestEvent:FireServer(category.id, info.id) -- the server checks Gold and replies
+			end
+		end
+		local view: InfoView = {
+			describe = function()
+				return info.name, info.improves, info.text -- the price is on the buttons (owner 2026-10-22)
+			end,
+			button = function()
+				if isOwned(info.id) then
+					return "OWNED", "Green", nil
+				end
+				return `{info.cost} Gold`, if gold() >= info.cost then "Green" else "Grey", buy
+			end,
+		}
+		addTile(index, info.name, info.improves, info.cost, state, view, buy)
 	end
 end
 
 -- Refresh -------------------------------------------------------------------------
 
 local messageText: string? = nil
-local messageColor = UiTheme.Text
+local messageFill: UiTheme.FillName = "Navy"
 local messageToken = 0
 
 local function refresh()
@@ -314,27 +377,22 @@ local function refresh()
 	menu.heading.Text = selected.name
 
 	if messageText then
-		menu.headingSub.Text = messageText
-		menu.headingSub.TextColor3 = messageColor
+		MenuKit.setSub(menu, messageText, messageFill)
 	else
-		menu.headingSub.Text = `{gold()} Gold  ·  click an upgrade to buy it`
-		menu.headingSub.TextColor3 = UiTheme.Gold
+		MenuKit.setSub(menu, `{gold()} Gold`, "Green")
 	end
-	menu.headingSub.TextTransparency = 0
 	for index, pip in pips do
 		MenuKit.setPip(pip, if index <= done then "done" else "")
 	end
-	for _, view in tiles do
-		styleUpgrade(view)
-	end
-	MenuKit.showInfo(menu, currentInfo()) -- keep its numbers current
+	styleTiles()
+	renderInfo() -- keep its numbers current
 end
 
 -- The server's reply shows on the line under the heading for a moment.
-local function showMessage(text: string, color: Color3)
+local function showMessage(text: string, fill: UiTheme.FillName)
 	messageToken += 1
 	local token = messageToken
-	messageText, messageColor = text, color
+	messageText, messageFill = text, fill
 	refresh()
 	task.delay(MESSAGE_SECONDS, function()
 		if messageToken == token then
@@ -346,18 +404,21 @@ end
 
 function selectCategory(category: Category)
 	selected = category
+	pinned = categoryViews[category.id] -- not a tile of the old grid
+	currentInfo = pinned
 	buildGrid()
 	refresh()
 end
 
-currentInfo = describeCategory(selected)
+pinned = categoryViews[selected.id]
+currentInfo = pinned
 
 resultEvent.OnClientEvent:Connect(function(result: unknown, id: unknown, detail: unknown)
 	if result == "Bought" then
 		local info = BaseUpgradeRules.upgrade(id, detail)
-		showMessage(if info then `{info.name} bought` else "Bought", UiTheme.Gold)
+		showMessage(if info then `{info.name} bought` else "Bought", "Gold")
 	elseif type(result) == "string" and MESSAGES[result] then
-		showMessage(MESSAGES[result], if result == "NotEnoughGold" then UiTheme.Enemy else UiTheme.Text)
+		showMessage(MESSAGES[result], if result == "NotEnoughGold" then "Red" else "Navy")
 	end
 end)
 
@@ -380,6 +441,10 @@ local function setOpen(open: boolean)
 	-- The crosshair script hides the mouse icon; show it while the menu is open.
 	UserInputService.MouseIconEnabled = open
 end
+
+menu.closeButton.Activated:Connect(function()
+	setOpen(false)
+end)
 
 ReplicatedStorage.AttributeChanged:Connect(function()
 	if menu.screen.Enabled then
@@ -404,7 +469,8 @@ RunService.Heartbeat:Connect(function()
 		and root ~= nil
 		and root:IsA("BasePart")
 		and (root.Position - bench.Position).Magnitude <= CLOSE_DISTANCE
-	if not (humanoid and humanoid.Health > 0 and near) then
+	local health = character and character:GetAttribute("Health") -- 0 = down (the Humanoid stays alive)
+	if not (humanoid and type(health) == "number" and health > 0 and near) then
 		setOpen(false)
 	end
 end)

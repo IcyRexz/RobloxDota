@@ -6,14 +6,16 @@
 --  * Left: level ring, player name, class, gold XP bar; ATTRIBUTES (Health,
 --    Damage, Move Speed, Attack Speed, Range: the server's Stat* attributes,
 --    growing each level); ABILITIES (Bolt, the Arcane Resonance passive,
---    Strike, Teleport and the Storm Banner base buff); and the info area,
---    which shows whatever ability or mastery the mouse is over (it keeps the
---    last one shown; no floating tooltips).
---  * Right: MASTERIES, a 3x3 grid (Config.Hero.Masteries). Each tile names
---    what it improves in orange. While a pick is waiting (MasteryPoints) the
---    line under the heading says "1 available" in gold and any untaken tile can
---    be clicked; picking closes the menu. Otherwise untaken tiles are greyed.
---    Taken tiles stay lit with a gold rim and "TAKEN".
+--    Strike, Teleport and the Storm Banner base buff).
+--  * Right: MASTERIES, a 3x3 grid (Config.Hero.Masteries). A tile shows only
+--    its name and what it improves (owner 2026-10-22). Under the grid, like
+--    Base Upgrades, the info area shows whatever ability or mastery the mouse
+--    is over (clicking pins it, hovering previews; no floating tooltips), with
+--    a PICK! button while a pick is waiting. The chip by the heading says
+--    "1 available" in gold then, and any untaken mastery can be picked with
+--    that button (clicking a tile only shows it, owner 2026-10-22); picking
+--    closes the menu. Otherwise untaken tiles are greyed. Taken tiles turn
+--    green with a check.
 -- The game keeps running while it is open (multiplayer): you can still walk,
 -- but the mouse is freed (a Modal button) so you can click, and you cannot shoot.
 -- Display only: the server (HeroProgress) checks and applies every pick.
@@ -32,7 +34,6 @@ local Pulse = Hero.Pulse
 local Skills = Hero.Skills
 local Bonus = Hero.MasteryBonus
 local formatNumber = MenuKit.formatNumber
-local GOLD_HEX = MenuKit.GOLD_HEX
 
 -- Attributes on the left, in order: label, server attribute, unit.
 local STATS = {
@@ -49,10 +50,12 @@ local playerGui = player:WaitForChild("PlayerGui")
 local chooseEvent = ReplicatedStorage:WaitForChild("ChooseMastery") :: RemoteEvent
 
 local menu = MenuKit.new("CharacterMenu", playerGui, {
+	title = "Character",
 	statsCaption = "ATTRIBUTES",
 	slotsCaption = "ABILITIES",
 	closeText = "U to close",
 	statRows = #STATS,
+	gridRows = math.ceil(#Hero.Masteries / MenuKit.COLUMNS),
 })
 menu.ringCaption.Text = "LV"
 menu.title.Text = player.DisplayName
@@ -91,12 +94,12 @@ local function damageShare(): number
 	return if damage then damage / Pulse.Damage else 1
 end
 
--- Masteries taken that improve `name`, as gold lines for the info area.
+-- Masteries taken that improve `name`, as bold lines for the info area.
 local function takenFor(name: string): string
 	local lines = ""
 	for _, info in Hero.Masteries do
 		if info.improves == name and hasMastery(info.id) then
-			lines ..= `\n<font color="#{GOLD_HEX}">{info.name}</font>: {info.text}`
+			lines ..= `\n<b>{info.name}</b>: {info.text}`
 		end
 	end
 	return if lines ~= "" then "\n" .. lines else ""
@@ -112,7 +115,7 @@ local MASTERY_DETAILS: { [string]: () -> string } = {
 	end,
 	Thunderstorm = function()
 		local S = Skills.Strike.Storm
-		return `For <b>{S.Duration}</b> s the area strikes one enemy inside it every <b>{S.Interval}</b> s, `
+		return `For <b>{S.Duration}s</b> the area strikes one enemy inside it every <b>{S.Interval}s</b>, `
 			.. `for <b>{percent(S.Factor)}</b> of the strike's damage.`
 	end,
 	EmpoweredLightning = function()
@@ -121,7 +124,7 @@ local MASTERY_DETAILS: { [string]: () -> string } = {
 	end,
 	QuickBlink = function()
 		local T = Skills.Teleport
-		return `Cooldown <b>{formatNumber(T.Cooldown)}</b> s -&gt; <b>{formatNumber(T.Cooldown * T.QuickFactor)}</b> s.`
+		return `Cooldown <b>{formatNumber(T.Cooldown)}s</b> -&gt; <b>{formatNumber(T.Cooldown * T.QuickFactor)}s</b>.`
 	end,
 	Vitality = function()
 		return `<b>+{percent(Bonus.Vitality)}</b> max health, healed at once.`
@@ -137,13 +140,46 @@ local MASTERY_DETAILS: { [string]: () -> string } = {
 	end,
 }
 
--- Info area: shows what the mouse is over and keeps the last one shown.
+-- Info area (owner 2026-10-22: you may only want to read): clicking a slot or
+-- tile pins it there; hovering something else previews it, and moving off it
+-- goes back to the pinned one, so the mouse can cross other tiles on its way
+-- to the PICK! button.
 type Describe = () -> (string, string?, string) -- title, improves, body
-local currentInfo: Describe
+-- The info area's button for what is shown: text (nil = none), fill, action.
+type Button = () -> (string?, UiTheme.FillName, (() -> ())?)
+type InfoView = { describe: Describe, button: Button?, tile: MenuKit.Tile?, slot: MenuKit.Slot? }
+local pinned: InfoView
+local currentInfo: InfoView
+local styleAll: () -> () -- defined below
 
-local function showInfo(describe: Describe)
-	currentInfo = describe
-	MenuKit.showInfo(menu, describe())
+local function renderInfo()
+	MenuKit.showInfo(menu, currentInfo.describe())
+	if currentInfo.button then
+		MenuKit.setInfoButton(menu, currentInfo.button())
+	else
+		MenuKit.setInfoButton(menu, nil, "Green", nil)
+	end
+end
+
+local function showInfo(view: InfoView)
+	currentInfo = view
+	renderInfo()
+	styleAll()
+end
+
+local function pin(view: InfoView)
+	pinned = view
+	showInfo(view)
+end
+
+local function preview(view: InfoView)
+	showInfo(view)
+end
+
+local function endPreview(view: InfoView)
+	if currentInfo == view and pinned then
+		showInfo(pinned)
+	end
 end
 
 -- Abilities ---------------------------------------------------------------------------
@@ -157,7 +193,7 @@ local ABILITIES: { Ability } = {
 				nil,
 				"Hits the first enemy where you aim. Aim assist locks on near the crosshair.\n\n"
 					.. `Damage <b>{statText("StatAttackDamage")}</b>   Range <b>{statText("StatAttackRange")}</b>   `
-					.. `Cooldown <b>{formatNumber(Pulse.Cooldown)}</b> s`
+					.. `Cooldown <b>{formatNumber(Pulse.Cooldown)}s</b>`
 					.. takenFor("Lightning Bolt")
 		end,
 	},
@@ -168,7 +204,7 @@ local ABILITIES: { Ability } = {
 			return "Arcane Resonance  [Passive]",
 				nil,
 				`One bolt in every <b>{every}</b> that hit deals <b>{formatNumber(1 + Hero.Resonance.BonusFactor)}x</b> damage. `
-					.. "The pips under your Bolt slot count up."
+					.. "The pips on your Bolt slot count the hits; the slot turns gold when the next one triggers it."
 					.. takenFor("Arcane Resonance")
 		end,
 	},
@@ -180,7 +216,7 @@ local ABILITIES: { Ability } = {
 				nil,
 				"Hold Q to aim at the ground, release to call lightning on the area.\n\n"
 					.. `Damage <b>{formatNumber(MageAbilities.strikeDamage(hasMastery) * damageShare())}</b>   `
-					.. `Radius <b>{formatNumber(MageAbilities.strikeRadius(hasMastery))}</b>   Cooldown <b>{S.Cooldown}</b> s`
+					.. `Radius <b>{formatNumber(MageAbilities.strikeRadius(hasMastery))}</b>   Cooldown <b>{S.Cooldown}s</b>`
 					.. takenFor("Lightning Strike")
 		end,
 	},
@@ -191,7 +227,7 @@ local ABILITIES: { Ability } = {
 			return "Teleport  [E]",
 				nil,
 				"Hold E to aim at open ground, release to blink there.\n\n"
-					.. `Range <b>{T.Range}</b>   Cooldown <b>{formatNumber(MageAbilities.teleportCooldown(hasMastery))}</b> s`
+					.. `Range <b>{T.Range}</b>   Cooldown <b>{formatNumber(MageAbilities.teleportCooldown(hasMastery))}s</b>`
 					.. takenFor("Teleport")
 		end,
 	},
@@ -207,13 +243,22 @@ local ABILITIES: { Ability } = {
 	},
 }
 
+local slots: { MenuKit.Slot } = {}
+local abilityViews: { InfoView } = {}
+
 for index, ability in ABILITIES do
 	local slot = MenuKit.slot(menu, ability.tag, index)
+	table.insert(slots, slot)
+	local view: InfoView = { describe = ability.describe, slot = slot }
+	table.insert(abilityViews, view)
 	slot.button.MouseEnter:Connect(function()
-		showInfo(ability.describe)
+		preview(view)
+	end)
+	slot.button.MouseLeave:Connect(function()
+		endPreview(view)
 	end)
 	slot.button.Activated:Connect(function()
-		showInfo(ability.describe)
+		pin(view)
 	end)
 end
 
@@ -227,42 +272,68 @@ local tiles: { MasteryTile } = {}
 
 local function styleMastery(view: MasteryTile)
 	local taken = hasMastery(view.info.id)
-	local state = if taken then "taken" elseif points() > 0 then "open" else "locked"
-	MenuKit.styleTile(view.tile, state, if taken then "TAKEN" else "")
+	view.tile.selected = pinned ~= nil and pinned.tile == view.tile
+	MenuKit.styleTile(view.tile, if taken then "taken" elseif points() > 0 then "open" else "locked")
 end
 
-local function describeMastery(info: Config.MasteryInfo): Describe
-	return function()
-		local status = if hasMastery(info.id)
-			then `<font color="#{GOLD_HEX}">Taken</font>`
-			elseif points() > 0 then "Click to take it."
-			else "Earn a pick at the next mastery level."
-		return info.name, info.improves, `{MASTERY_DETAILS[info.id]()}\n\n{status}`
+function styleAll()
+	for _, slot in slots do
+		slot.selected = pinned ~= nil and pinned.slot == slot
+		MenuKit.styleSlot(slot)
 	end
+	for _, view in tiles do
+		styleMastery(view)
+	end
+end
+
+local function pick(info: Config.MasteryInfo)
+	if points() > 0 and not hasMastery(info.id) then
+		chooseEvent:FireServer(info.id)
+		setOpen(false) -- picking closes the menu (owner 2026-10-20)
+	end
+end
+
+local function masteryView(info: Config.MasteryInfo, tile: MenuKit.Tile): InfoView
+	return {
+		describe = function()
+			-- The detailed text only (owner 2026-10-22). The button says TAKEN /
+			-- PICK! itself, so the text only explains why there is no button.
+			local status = if hasMastery(info.id) or points() > 0 then "" else "\nEarn a pick at the next mastery level."
+			return info.name, info.improves, MASTERY_DETAILS[info.id]() .. status
+		end,
+		button = function()
+			if hasMastery(info.id) then
+				return "TAKEN", "Green", nil
+			elseif points() > 0 then
+				return "PICK!", "Gold", function()
+					pick(info)
+				end
+			end
+			return nil, "Grey", nil
+		end,
+		tile = tile,
+	}
 end
 
 for index, info in Hero.Masteries do
 	local tile = MenuKit.tile(menu, index)
 	tile.name.Text = info.name
 	tile.improves.Text = `Improves: {info.improves}`
-	tile.text.Text = info.text
 	local view: MasteryTile = { info = info, tile = tile }
 	table.insert(tiles, view)
-	local describe = describeMastery(info)
+	local infoView = masteryView(info, tile)
 	tile.button.MouseEnter:Connect(function()
 		tile.hover = true
-		styleMastery(view)
-		showInfo(describe)
+		preview(infoView)
 	end)
 	tile.button.MouseLeave:Connect(function()
 		tile.hover = false
 		styleMastery(view)
+		endPreview(infoView)
 	end)
+	-- Clicking the tile only shows it; picking takes the PICK! button (owner 2026-10-22).
 	tile.button.Activated:Connect(function()
-		if points() > 0 and not hasMastery(info.id) then
-			chooseEvent:FireServer(info.id)
-			setOpen(false) -- picking closes the menu (owner 2026-10-20)
-		end
+		pin(infoView)
 	end)
 end
 
@@ -301,24 +372,19 @@ local function refresh()
 		end
 	end
 	if waiting > 0 then
-		menu.headingSub.Text = `{waiting} available  ·  pick one`
-		menu.headingSub.TextColor3 = UiTheme.Gold
-		menu.headingSub.TextTransparency = 0
+		MenuKit.setSub(menu, `{waiting} available  ·  pick one`, "Gold")
 	else
-		menu.headingSub.Text = if nextLevel then `Next at level {nextLevel}` else "All masteries chosen"
-		menu.headingSub.TextColor3 = UiTheme.Text
-		menu.headingSub.TextTransparency = UiTheme.Strength.Label
+		MenuKit.setSub(menu, if nextLevel then `Next at level {nextLevel}` else "All masteries chosen", "Navy")
 	end
 	for index, pip in pips do
 		MenuKit.setPip(pip, if index <= takenCount then "done" elseif index <= takenCount + waiting then "open" else "")
 	end
-	for _, view in tiles do
-		styleMastery(view)
-	end
-	MenuKit.showInfo(menu, currentInfo()) -- keep its numbers current
+	styleAll()
+	renderInfo() -- keep its numbers current
 end
 
-currentInfo = ABILITIES[1].describe
+pinned = abilityViews[1]
+currentInfo = pinned
 
 -- Open / close -----------------------------------------------------------------------
 
@@ -334,6 +400,10 @@ function setOpen(open: boolean)
 	-- The crosshair script hides the mouse icon; show it while the menu is open.
 	UserInputService.MouseIconEnabled = open
 end
+
+menu.closeButton.Activated:Connect(function()
+	setOpen(false)
+end)
 
 player.AttributeChanged:Connect(function()
 	if menu.screen.Enabled then

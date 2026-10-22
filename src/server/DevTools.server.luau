@@ -11,6 +11,7 @@
 --   "Spawn", kind: one unit of that kind; zombies Config.Dev.ZombieDistance
 --     studs in front of the sender's hero, our soldiers SoldierDistance beside it.
 --   "NextEvent": start the next battlefield event now (ZombieEvents).
+--   "Die": the sender's hero drops to 0 health and goes down (Heroes.server).
 --   Ignored outside Studio, for unknown commands or kinds, or faster than MIN_GAP.
 
 local Players = game:GetService("Players")
@@ -61,6 +62,12 @@ local commands: { [string]: (Player, unknown) -> () } = {
 	Spawn = spawnUnit,
 	NextEvent = function()
 		ZombieEvents.triggerNext()
+	end,
+	Die = function(player)
+		local character = player.Character
+		if character and character:GetAttribute("Kind") == "Hero" then
+			character:SetAttribute("Health", 0)
+		end
 	end,
 }
 

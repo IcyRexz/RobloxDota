@@ -44,14 +44,10 @@ layout.Padding = UDim.new(0, space(2))
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = panel
 
-local coin = Instance.new("Frame")
+local coin = UiTheme.block(panel, "Gold", 9, UiTheme.OutlineThin)
 coin.Name = "Coin"
 coin.LayoutOrder = 1
-coin.Size = UDim2.fromOffset(12, 12)
-coin.BackgroundColor3 = UiTheme.Gold
-coin.BorderSizePixel = 0
-coin.Parent = panel
-UiTheme.corner(coin, 6)
+coin.Size = UDim2.fromOffset(18, 18)
 
 local amount = UiTheme.text(panel, AMOUNT_SIZE, UiTheme.Font.Heavy)
 amount.Name = "Amount"

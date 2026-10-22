@@ -39,6 +39,7 @@ local ASSIST_DEGREES = 3 -- crosshair this close to an enemy's body turns the as
 local ASSIST_KEEP_DEGREES = 5 -- ...and it stays on that enemy until this far off
 local UNIT_RADIUS = 1.5 -- studs: rough body half-width used for the angle test
 local MARKER_COLOR = UiTheme.Enemy -- an enemy you can hit (UI design system)
+local ALLY_MARKER_COLOR = UiTheme.Ally -- an ally under the crosshair (owner 2026-10-23)
 local MARKER_DASHES = 12
 local MARKER_SPIN = math.rad(90) -- degrees per second
 -- Players are always on our side; used until the server sets the attribute.
@@ -48,9 +49,10 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local actionEvent = ReplicatedStorage:WaitForChild("HeroAction") :: RemoteEvent
 
--- The enemy under the red marker, shared with other scripts on this device
--- (TargetInfo.client shows its face, name and health). Made here, on this
--- device only: it is never sent to or trusted by the server.
+-- The enemy under the red marker, or else the ally under the crosshair
+-- (owner 2026-10-23: hover allies to see their health), shared with other
+-- scripts on this device (TargetInfo.client shows its face, name and health).
+-- Made here, on this device only: it is never sent to or trusted by the server.
 local aimValue = Instance.new("ObjectValue")
 aimValue.Name = "AimTarget"
 aimValue.Parent = player
@@ -162,6 +164,31 @@ local function updateAssist(character: Model, root: BasePart)
 	assistTarget, assistPoint = findTarget(character, root, Pulse.Range, assistTarget)
 end
 
+-- The ally (unit, hero or building) straight under the crosshair within
+-- HealthBarRange of the camera's focus, for the target panel. It gets a green
+-- ring (no outline).
+local function allyUnderCrosshair(character: Model): Instance?
+	local camera = Workspace.CurrentCamera
+	local eye, look = camera.CFrame.Position, camera.CFrame.LookVector
+	local reach = (camera.Focus.Position - eye).Magnitude + Config.Display.HealthBarRange
+	local ignore = Targeting.seeThrough()
+	table.insert(ignore, character)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = ignore
+	local result = Workspace:Spherecast(eye, Targeting.ShotRadius, look * reach, params)
+	local owner = result and Targeting.ownerOf(result.Instance)
+	if
+		owner
+		and Targeting.TargetKinds[owner:GetAttribute("Kind")]
+		and owner:GetAttribute("Team") == localTeam()
+		and isAlive(owner)
+	then
+		return owner
+	end
+	return nil
+end
+
 -- Marker -----------------------------------------------------------------------
 
 local highlight = Instance.new("Highlight")
@@ -187,15 +214,25 @@ for i = 1, MARKER_DASHES do
 	table.insert(dashes, dash)
 end
 
-local function markerRadius(target: Instance): number
+local function markerRadius(target: Instance, root: BasePart): number
 	if target:IsA("BasePart") then
 		return math.max(target.Size.X, target.Size.Z) / 2 + 1.5
 	end
-	return 2.2
+	return 2.2 * root.Size.X / 2 -- wider round bigger bodies (a Brute's root is 1.5x)
+end
+
+-- Height of a unit's feet: below its root by half the root plus the hip
+-- height, both of which grow with the body (so a Brute's ring is on the
+-- ground too, not at its waist).
+local function feetY(target: Instance, root: BasePart): number
+	local humanoid = target:FindFirstChildOfClass("Humanoid")
+	local hip = if humanoid then humanoid.HipHeight else 2
+	return root.Position.Y - root.Size.Y / 2 - hip
 end
 
 local spin = 0
-local function drawMarker(target: Instance?, deltaTime: number)
+-- `ally` draws the ring green and without the red outline.
+local function drawMarker(target: Instance?, ally: boolean, deltaTime: number)
 	local targetRoot = if target and target:IsA("BasePart") then target elseif target then Targeting.rootOf(target) else nil
 	if not (target and targetRoot) then
 		marker.Parent = nil
@@ -203,12 +240,14 @@ local function drawMarker(target: Instance?, deltaTime: number)
 		return
 	end
 	local centre = targetRoot.Position
-	local radius = markerRadius(target)
+	local radius = markerRadius(target, targetRoot)
 	-- Ring at the target's feet (or the structure's base), so it sits on hills too.
-	local groundY = if target:IsA("BasePart") then centre.Y - target.Size.Y / 2 else centre.Y - 3
+	local groundY = if target:IsA("BasePart") then centre.Y - target.Size.Y / 2 else feetY(target, targetRoot)
 	spin += MARKER_SPIN * deltaTime
 	local dashLength = 2 * math.pi * radius / MARKER_DASHES * 0.6
+	local color = if ally then ALLY_MARKER_COLOR else MARKER_COLOR
 	for i, dash in dashes do
+		dash.Color = color
 		local angle = spin + (i / MARKER_DASHES) * 2 * math.pi
 		local position = Vector3.new(centre.X + math.cos(angle) * radius, groundY + 0.1, centre.Z + math.sin(angle) * radius)
 		local tangent = Vector3.new(-math.sin(angle), 0, math.cos(angle))
@@ -216,8 +255,8 @@ local function drawMarker(target: Instance?, deltaTime: number)
 		dash.CFrame = CFrame.lookAt(position, position + tangent)
 	end
 	marker.Parent = Workspace
-	highlight.Adornee = target
-	highlight.Parent = playerGui
+	highlight.Adornee = if ally then nil else target
+	highlight.Parent = if ally then nil else playerGui
 end
 
 -- Abilities (owner 2026-10-21) -------------------------------------------------------
@@ -378,10 +417,11 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local root = character and Targeting.rootOf(character)
-	if not (character and humanoid and root and humanoid.Health > 0) then
+	-- Down heroes (Health attribute 0) keep a living Humanoid, so the attribute decides.
+	if not (character and humanoid and root and isAlive(character)) then
 		assistTarget, assistPoint = nil, nil
 		aiming = nil
-		drawMarker(nil, deltaTime)
+		drawMarker(nil, false, deltaTime)
 		drawAreas(nil, nil)
 		if player:GetAttribute("AimTarget") then
 			player:SetAttribute("AimTarget", false)
@@ -390,7 +430,8 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		return
 	end
 	updateAssist(character, root)
-	drawMarker(assistTarget, deltaTime)
+	local hoveredAlly = if assistTarget then nil else allyUnderCrosshair(character)
+	drawMarker(assistTarget or hoveredAlly, hoveredAlly ~= nil, deltaTime)
 	drawAreas(character, root)
 	-- Tells the crosshair (Crosshair.client) to turn red while the marker is on.
 	-- A client-set attribute: it stays on this device and is never trusted by the server.
@@ -398,8 +439,9 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	if player:GetAttribute("AimTarget") ~= marked then
 		player:SetAttribute("AimTarget", marked)
 	end
-	if aimValue.Value ~= assistTarget then
-		aimValue.Value = assistTarget
+	local shown = assistTarget or hoveredAlly
+	if aimValue.Value ~= shown then
+		aimValue.Value = shown
 	end
 	if holding > 0 then
 		shoot(character)

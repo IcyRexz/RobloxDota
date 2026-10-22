@@ -55,7 +55,7 @@ function FloatingText.show(at: Vector3, text: string, options: Options?)
 	label.TextColor3 = color
 	label.Text = text
 	UiTheme.floatingText(label)
-	label.TextStrokeTransparency = 0.35
+	UiTheme.outlineText(label, UiTheme.outlineFor(size)) -- sized for the full text size it grows to
 
 	-- 1. Pop: overshoot to 125%, then settle to full size.
 	local overshoot = TweenService:Create(
