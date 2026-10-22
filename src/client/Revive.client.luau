@@ -58,7 +58,11 @@ local function show(prompt: ProximityPrompt)
 
 	local panel = UiTheme.panel(billboard)
 	panel.Size = UDim2.fromOffset(WIDTH, HEIGHT)
-	UiTheme.applyScale(panel)
+	-- A fixed scale: the billboard's pixel size is fixed too (it floats in
+	-- the world, so it does not follow the window size).
+	local scale = Instance.new("UIScale")
+	scale.Scale = UiTheme.Scale
+	scale.Parent = panel
 	local key = UiTheme.block(panel, "Gold", 6, UiTheme.OutlineThin)
 	key.Position = UDim2.fromOffset(space(2), (HEIGHT - KEY) // 2)
 	key.Size = UDim2.fromOffset(KEY, KEY)

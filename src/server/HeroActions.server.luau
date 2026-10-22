@@ -10,8 +10,9 @@
 --    of the hero. After Delay, every enemy unit within the radius takes damage.
 --    Masteries: Thunderstorm (the area keeps striking one enemy at a time),
 --    Empowered Lightning (bigger, harder).
---  * Teleport (E): (landing point: Vector3). Open ground within Range (flat);
---    the server checks the spot and moves the hero there. Mastery: Quick Blink
+--  * Teleport (E): (landing point: Vector3). Open ground within Range (flat),
+--    pulled back to before the first fence (Targeting.stopAtFence); the server
+--    checks the spot and moves the hero there. Mastery: Quick Blink
 --    (shorter cooldown).
 -- Damage grows with the player's level (HeroProgress). Cooldowns are server
 -- time in the character's <Action>ReadyAt attributes, with the full length in
@@ -52,6 +53,11 @@ local Pulse = HeroConfig.Pulse
 local Skills = HeroConfig.Skills
 
 local POINT_SLACK = 2 -- studs of range slack for movement between the client's aim and now
+-- The server sees a walking hero a little behind where its own device has it
+-- (owner 2026-10-23: E held while walking often did nothing, refused as out of
+-- range). A point up to this far beyond the range is pulled back to
+-- Range + POINT_SLACK instead of refused; farther is refused.
+local MOVE_SLACK = 10
 local TELEPORT_MAX_RISE = 25 -- studs the landing spot may be above or below the hero
 local CLEARANCE = Vector3.new(2, 5, 2) -- room the hero needs at the landing spot
 
@@ -110,7 +116,6 @@ local function isEnemyTarget(character: Model, team: string, target: Instance): 
 	return typeof(targetTeam) == "string"
 		and targetTeam ~= team
 		and CombatService.isAlive(target)
-		and not CombatService.isLocked(target)
 end
 
 -- A usable aim direction from the client: a finite, roughly unit Vector3.
@@ -273,6 +278,20 @@ local function storm(player: Player, character: Model, team: string, at: Vector3
 	end)
 end
 
+-- An ability's aimed point, if it is within reach of the hero as the server
+-- sees it: pulled back toward the hero when only movement lag puts it beyond.
+local function withinReach(root: BasePart, point: Vector3, range: number): Vector3?
+	local flat = Vector3.new(point.X - root.Position.X, 0, point.Z - root.Position.Z)
+	local distance = flat.Magnitude
+	if distance <= range + POINT_SLACK then
+		return point
+	elseif distance > range + MOVE_SLACK then
+		return nil
+	end
+	local pulled = root.Position + flat.Unit * (range + POINT_SLACK)
+	return Vector3.new(pulled.X, point.Y, pulled.Z)
+end
+
 local function strike(player: Player, _state: State, time: number, point: unknown)
 	local S = Skills.Strike
 	local character, team = readyFor(player, "Strike", time)
@@ -280,8 +299,8 @@ local function strike(player: Player, _state: State, time: number, point: unknow
 	if not (character and team and root and isFinitePoint(point)) then
 		return
 	end
-	local at = point :: Vector3
-	if Targeting.planarDistance(at, root.Position) > S.Range + POINT_SLACK then
+	local at = withinReach(root, point :: Vector3, S.Range)
+	if not at then
 		return
 	end
 	local has = HeroProgress.masteryCheck(player)
@@ -356,14 +375,16 @@ local function teleport(player: Player, _state: State, time: number, point: unkn
 	if not (character and team and root and humanoid and isFinitePoint(point)) then
 		return
 	end
-	local target = point :: Vector3
-	if Targeting.planarDistance(target, root.Position) > T.Range + POINT_SLACK then
+	local target = withinReach(root, point :: Vector3, T.Range)
+	if not target then
 		return
 	end
 	if math.abs(target.Y - root.Position.Y) > TELEPORT_MAX_RISE then
 		return
 	end
-	local landing = landingSpot(target)
+	-- Never through a fence (owner 2026-10-23): the same rule as the client's
+	-- marker, so a point beyond a fence lands just before it.
+	local landing = landingSpot(Targeting.stopAtFence(root.Position, target))
 	if not landing then
 		return
 	end

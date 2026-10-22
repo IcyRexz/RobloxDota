@@ -29,7 +29,6 @@ local DEFENDERS = Config.Teams.Defenders
 local DISPLAY_NAMES: { [string]: string } = { Tower = "tower", Barracks = "barracks", Core = "core", Nest = "nest" }
 -- How each side is named on banners.
 local TEAM_LABELS: { [string]: string } = { [DEFENDERS] = "We", [Config.Teams.Zombies] = "Zombies" }
-local UNIT_LABELS: { [string]: string } = { [DEFENDERS] = "Our minions", [Config.Teams.Zombies] = "Zombies" }
 -- Players are always on our side; used until the server sets the attribute.
 local DEFAULT_TEAM = DEFENDERS
 
@@ -138,8 +137,9 @@ destroyedEvent.OnClientEvent:Connect(function(kind: unknown, team: unknown, kill
 		return
 	end
 	local ours = team == localTeam()
-	local detail = if kind == "Barracks" and UNIT_LABELS[killerTeam]
-		then `{UNIT_LABELS[killerTeam]} are now stronger`
+	-- A fallen barracks only stops its own soldiers (owner 2026-10-23).
+	local detail = if kind == "Barracks" and ours
+		then "No more soldiers from that side"
 		elseif ours then `Your {name} has fallen`
 		else `Enemy {name} destroyed`
 	announce({
@@ -159,6 +159,12 @@ zombieEvent.OnClientEvent:Connect(function(id: unknown, phase: unknown)
 			announce(if phase == "Start"
 				then { headline = string.upper(info.name), subline = info.text }
 				else { headline = `{info.name} is over`, subline = "Zombies are back to normal" })
+			return
+		end
+	end
+	for _, arrival in Config.Events.Arrivals do
+		if arrival.id == id and phase == "Start" then
+			announce({ headline = string.upper(arrival.name), subline = arrival.text })
 			return
 		end
 	end

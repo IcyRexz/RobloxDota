@@ -193,7 +193,7 @@ local function fitBoard()
 	local rows = #Players:GetPlayers()
 	local height = BOARD_PAD * 2 + HEADER_HEIGHT + rows * (ROW_HEIGHT + space(1))
 	boardScale.Scale = math.min(
-		UiTheme.Scale,
+		UiTheme.Scale * UiTheme.screenFactor(),
 		(viewport.X - SCREEN_MARGIN * 2) / BOARD_WIDTH,
 		(viewport.Y - SCREEN_MARGIN * 2) / height
 	)

@@ -82,12 +82,39 @@ type ZombieLook = { skin: Color3, shirt: Color3, legs: Color3 }
 local ZOMBIE_LOOKS: { [string]: ZombieLook } = {
 	-- dark green skin, blood-red shirt, muddy legs
 	Zombie = { skin = Color3.fromRGB(78, 104, 58), shirt = Color3.fromRGB(110, 34, 30), legs = Color3.fromRGB(62, 70, 48) },
-	-- darker, greyer skin, near-black red shirt (and 1.5x the size)
-	Brute = { skin = Color3.fromRGB(62, 82, 50), shirt = Color3.fromRGB(70, 22, 20), legs = Color3.fromRGB(44, 48, 36) },
+	-- clearly darker than a zombie (owner 2026-10-23): deep olive skin,
+	-- near-black red shirt, dark legs (and 1.5x the size)
+	Brute = { skin = Color3.fromRGB(46, 62, 38), shirt = Color3.fromRGB(48, 14, 14), legs = Color3.fromRGB(32, 35, 26) },
 	-- sickly yellow-green, with a glowing acid mouth
 	Spitter = { skin = Color3.fromRGB(132, 160, 62), shirt = Color3.fromRGB(86, 96, 34), legs = Color3.fromRGB(62, 70, 48) },
 }
 local ZOMBIE_EYES = Color3.fromRGB(255, 40, 30)
+local EYE_HEIGHT = 0.12 -- eyes this share of the head's height above its centre
+-- Wear and gear (owner 2026-10-23: streaks and textures, no uploaded images,
+-- different for each kind): rough built-in materials plus small flat pieces
+-- stuck on the front of the body (see addWear and addUniform).
+local CLOTH_MATERIAL = Enum.Material.Fabric
+local SKIN_MATERIALS: { [string]: Enum.Material } = {
+	Zombie = Enum.Material.Concrete,
+	Brute = Enum.Material.Slate, -- rough hide
+	Spitter = Enum.Material.Concrete,
+}
+local BLOOD = Color3.fromRGB(88, 10, 10)
+local SCAR = Color3.fromRGB(176, 150, 128)
+local PUS = Color3.fromRGB(200, 214, 70)
+local LEATHER = Color3.fromRGB(78, 52, 30)
+local STEEL = Color3.fromRGB(150, 156, 164)
+local SKIN_PARTS = { "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand" }
+local CLOTH_PARTS = {
+	"UpperTorso",
+	"LowerTorso",
+	"LeftUpperLeg",
+	"LeftLowerLeg",
+	"LeftFoot",
+	"RightUpperLeg",
+	"RightLowerLeg",
+	"RightFoot",
+}
 local ACID_COLOR = Color3.fromRGB(50, 140, 35) -- owner 2026-10-22: darker acid green; same as MinionVisuals.client
 
 -- Roblox's own default R15 animations (free for any game). "Tool hold" raises
@@ -183,6 +210,129 @@ local function addWeaponPart(hand: BasePart, size: Vector3, color: Color3, offse
 	part.Parent = hand.Parent
 end
 
+-- A thin flat piece lying on the front (-Z) face of a body part: a blood
+-- streak, a tear in the shirt, a scar, a strap. `x`, `y` are studs from the
+-- face's centre; `angle` (degrees) tilts it on the face. It sits just proud of
+-- the part's box, which the R15 body meshes fill. Decoration only.
+local function addSurfaceDetail(
+	part: BasePart,
+	size: Vector2,
+	color: Color3,
+	x: number,
+	y: number,
+	angle: number?,
+	material: Enum.Material?
+)
+	local depth = 0.04
+	local offset = CFrame.new(x, y, -part.Size.Z / 2 - depth / 2 + 0.01) * CFrame.Angles(0, 0, math.rad(angle or 0))
+	local detail = Instance.new("Part")
+	detail.Name = "Detail"
+	detail.Size = Vector3.new(size.X, size.Y, depth)
+	detail.Color = color
+	detail.Material = material or Enum.Material.SmoothPlastic
+	detail.Massless = true
+	detail.CanCollide = false
+	detail.CanQuery = false
+	detail.CanTouch = false
+	detail.CastShadow = false
+	detail.CFrame = part.CFrame * offset
+	local weld = Instance.new("Weld")
+	weld.Part0 = part
+	weld.Part1 = detail
+	weld.C0 = offset
+	weld.Parent = detail
+	detail.Parent = part.Parent
+end
+
+local function darker(color: Color3, share: number): Color3
+	return Color3.new(color.R * share, color.G * share, color.B * share)
+end
+
+-- Sets the material of the named body parts.
+local function setMaterial(body: Model, names: { string }, material: Enum.Material)
+	for _, name in names do
+		local part = body:FindFirstChild(name)
+		if part and part:IsA("BasePart") then
+			part.Material = material
+		end
+	end
+end
+
+local function bodyPart(body: Model, name: string): BasePart?
+	local part = body:FindFirstChild(name)
+	return if part and part:IsA("BasePart") then part else nil
+end
+
+-- A detail on a named body part, if the body has it.
+local function detailOn(body: Model, name: string, size: Vector2, color: Color3, x: number, y: number, angle: number?, material: Enum.Material?)
+	local part = bodyPart(body, name)
+	if part then
+		addSurfaceDetail(part, size, color, x, y, angle, material)
+	end
+end
+
+-- Zombie wear, different per kind (owner 2026-10-23):
+--  * Zombie: blood streaks on the shirt, rot patches on an arm and
+--    the left cheek, blood dripping from the mouth.
+--  * Brute: rough Slate hide, pale scars (one with stitches down the face, one
+--    across each upper arm), a rope belt. (No skin-coloured tears on the
+--    shirts: owner 2026-10-23, they read as green patches.)
+--  * Spitter: yellow pustules on head, arms and chest, green acid stains down
+--    the shirt, acid dripping from the mouth.
+local function addWear(body: Model, look: ZombieLook, kind: string)
+	setMaterial(body, SKIN_PARTS, SKIN_MATERIALS[kind] or Enum.Material.Concrete)
+	setMaterial(body, CLOTH_PARTS, CLOTH_MATERIAL)
+	local rot = darker(look.skin, 0.65)
+	if kind == "Brute" then
+		detailOn(body, "Head", Vector2.new(0.07, 0.7), SCAR, 0.3, 0.05, -8)
+		for _, y in { 0.25, 0.05, -0.15 } do
+			detailOn(body, "Head", Vector2.new(0.22, 0.05), SCAR, 0.3 + y * 0.14, y, -8) -- stitches
+		end
+		detailOn(body, "UpperTorso", Vector2.new(0.1, 0.6), BLOOD, -0.6, 0.2)
+		detailOn(body, "LowerTorso", Vector2.new(2, 0.16), LEATHER, 0, 0.05) -- rope belt
+		detailOn(body, "LeftUpperArm", Vector2.new(0.7, 0.07), SCAR, 0, 0.1, 15)
+		detailOn(body, "RightUpperArm", Vector2.new(0.6, 0.07), SCAR, 0, -0.15, -20)
+	elseif kind == "Spitter" then
+		local stain = darker(ACID_COLOR, 0.8)
+		detailOn(body, "UpperTorso", Vector2.new(0.12, 0.9), stain, -0.35, -0.05)
+		detailOn(body, "UpperTorso", Vector2.new(0.1, 0.6), stain, 0.05, 0.15)
+		detailOn(body, "UpperTorso", Vector2.new(0.3, 0.25), stain, 0.45, -0.4)
+		local pustule = Vector2.new(0.16, 0.16)
+		detailOn(body, "Head", pustule, PUS, -0.32, 0.3, 45)
+		detailOn(body, "Head", pustule, PUS, 0.35, -0.15, 45)
+		detailOn(body, "UpperTorso", pustule, PUS, 0.55, 0.45, 45)
+		detailOn(body, "LeftLowerArm", pustule, PUS, 0.1, 0.2, 45)
+		detailOn(body, "RightUpperArm", pustule, PUS, -0.15, 0, 45)
+		detailOn(body, "Head", Vector2.new(0.08, 0.35), ACID_COLOR, 0.05, -0.5) -- acid drip
+	else
+		detailOn(body, "UpperTorso", Vector2.new(0.12, 0.8), BLOOD, -0.45, 0.05)
+		detailOn(body, "UpperTorso", Vector2.new(0.09, 0.55), BLOOD, -0.25, 0.2)
+		detailOn(body, "UpperTorso", Vector2.new(0.1, 0.45), BLOOD, 0.15, -0.1)
+		detailOn(body, "LowerTorso", Vector2.new(0.35, 0.2), darker(look.shirt, 0.6), -0.3, 0)
+		detailOn(body, "LeftUpperArm", Vector2.new(0.3, 0.35), rot, 0.05, 0.05)
+		detailOn(body, "RightLowerArm", Vector2.new(0.3, 0.3), rot, -0.05, 0.1)
+		detailOn(body, "Head", Vector2.new(0.28, 0.2), rot, -0.32, -0.2) -- rot on the left cheek
+		detailOn(body, "Head", Vector2.new(0.08, 0.3), BLOOD, 0.1, -0.35) -- blood from the mouth
+	end
+end
+
+-- Our soldiers' gear (owner 2026-10-23: texture our side too): cloth uniforms
+-- and a leather belt; the swordsman wears a steel breastplate and shoulder
+-- plates, the archer a leather vest with a quiver strap across the chest.
+local function addUniform(body: Model, kind: string)
+	setMaterial(body, CLOTH_PARTS, CLOTH_MATERIAL)
+	setMaterial(body, { "LeftUpperArm", "LeftLowerArm", "RightUpperArm", "RightLowerArm" }, CLOTH_MATERIAL)
+	detailOn(body, "LowerTorso", Vector2.new(2, 0.18), LEATHER, 0, 0.02, 0, Enum.Material.Leather)
+	if kind == "Archer" then
+		detailOn(body, "UpperTorso", Vector2.new(1.3, 1.2), LEATHER, 0, -0.1, 0, Enum.Material.Leather)
+		detailOn(body, "UpperTorso", Vector2.new(0.16, 2), darker(LEATHER, 0.7), 0, 0.05, 38, Enum.Material.Leather)
+	else
+		detailOn(body, "UpperTorso", Vector2.new(1.4, 1.1), STEEL, 0, 0.1, 0, Enum.Material.Metal)
+		detailOn(body, "LeftUpperArm", Vector2.new(0.8, 0.4), STEEL, 0, 0.35, 0, Enum.Material.Metal)
+		detailOn(body, "RightUpperArm", Vector2.new(0.8, 0.4), STEEL, 0, 0.35, 0, Enum.Material.Metal)
+	end
+end
+
 -- Both weapons sit in the right hand, which the tool-hold pose raises forward.
 -- In that pose the hand's -Z axis points up and its -Y axis points forward.
 local function addSword(body: Model)
@@ -238,12 +388,21 @@ end
 local function makeZombie(body: Model, kind: string)
 	local head = body:FindFirstChild("Head")
 	if head and head:IsA("BasePart") then
-		local face = head:FindFirstChild("face")
-		if face then
-			face:Destroy()
+		-- No face: every decal and texture on the head goes (owner 2026-10-23:
+		-- a face's own eyes still showed above the red ones).
+		for _, item in head:GetChildren() do
+			if item:IsA("Decal") or item:IsA("SurfaceAppearance") then
+				item:Destroy()
+			end
 		end
+		if head:IsA("MeshPart") then
+			pcall(function()
+				head.TextureID = ""
+			end)
+		end
+		local eyeY = head.Size.Y * EYE_HEIGHT
 		for _, x in { -0.22, 0.22 } do
-			addFacePart(body, head, "Eye", Vector3.new(0.22, 0.22, 0.22), ZOMBIE_EYES, CFrame.new(x, 0.1, -head.Size.Z / 2))
+			addFacePart(body, head, "Eye", Vector3.new(0.22, 0.22, 0.22), ZOMBIE_EYES, CFrame.new(x, eyeY, -head.Size.Z / 2))
 		end
 		if kind == "Spitter" then
 			addFacePart(body, head, "Mouth", Vector3.new(0.4, 0.4, 0.4), ACID_COLOR, CFrame.new(0, -0.3, -head.Size.Z / 2))
@@ -283,10 +442,13 @@ local function buildTemplate(team: string, stats: MinionStats): Model
 	end
 	if zombie then
 		makeZombie(body, stats.kind)
+		addWear(body, look, stats.kind)
 	elseif stats.kind == "Archer" then
 		addBow(body)
+		addUniform(body, stats.kind)
 	else
 		addSword(body)
+		addUniform(body, stats.kind)
 	end
 
 	local humanoid = body:FindFirstChildOfClass("Humanoid") :: Humanoid
@@ -461,21 +623,11 @@ local function pickField(team: string, start: Vector3): string
 	return zombieFields[1]
 end
 
--- Teams that destroyed the enemy barracks: their later minions are stronger.
-local empowered: { [string]: boolean } = {}
-CombatService.Died:Connect(function(target: Instance, _killer: Instance, killerTeam: string)
-	if target:GetAttribute("Kind") == "Barracks" and not empowered[killerTeam] then
-		empowered[killerTeam] = true
-		print(`[Minions] {killerTeam} destroyed the enemy barracks: their new minions get +{MinionConfig.BarracksBonus * 100}%`)
-	end
-end)
-
--- Health and damage bonus for a team's next spawns (both bonuses add up).
+-- Health and damage bonus for a team's next spawns (the bonuses add up).
+-- A fallen barracks only stops its own soldiers (owner 2026-10-23: no
+-- strength bonus for the zombies any more).
 local function strengthOf(team: string): number
 	local bonus = MinionConfig.TestTeamBonus[team] or 0
-	if empowered[team] then
-		bonus += MinionConfig.BarracksBonus
-	end
 	if team == ZOMBIES then
 		bonus += ZombieEvents.strengthBonus() -- Zombies Evolve
 	end
@@ -685,11 +837,15 @@ local function spawnGroup(spawnPoint: SpawnPoint, group: { MinionStats })
 	end
 end
 
--- A zombie group slot: maybe a variant (ZombieVariants chances, in order).
+-- A zombie group slot: maybe a variant (ZombieVariants chances, in order),
+-- once that variant has arrived (ZombieEvents.hasArrived).
 local function rollVariant(stats: MinionStats): MinionStats
 	local roll = math.random()
 	for _, variant in MinionConfig.ZombieVariants do
 		if roll < variant.chance then
+			if not ZombieEvents.hasArrived(variant.stats.kind) then
+				return stats
+			end
 			return variant.stats
 		end
 		roll -= variant.chance
@@ -820,7 +976,6 @@ end
 local function canHitStructure(minion: Minion, structure: BasePart): boolean
 	return structure:GetAttribute("Team") ~= minion.team
 		and CombatService.isAlive(structure)
-		and not CombatService.isLocked(structure)
 end
 
 -- Zombies (owner 2026-10-20): the nearest enemy within aggro range, unit,
@@ -831,7 +986,7 @@ end
 local function nearestForZombie(minion: Minion): (Instance?, Vector3)
 	local position = minion.root.Position
 	local attacker = minion.attacker
-	if attacker and CombatService.isAlive(attacker) and not CombatService.isLocked(attacker) then
+	if attacker and CombatService.isAlive(attacker) then
 		local point = targetPoint(attacker, position)
 		if point and planarDistance(point, position) <= MinionConfig.ZombieChaseRange then
 			return attacker, point
@@ -894,14 +1049,13 @@ end
 --  2. the nearest enemy minion within aggro range
 --  3. the nearest enemy hero within aggro range
 --  4. the nearest enemy structure within aggro range that can take damage
--- Locked structures are walked past.
 local function chooseTarget(minion: Minion): (Instance?, Vector3)
 	if minion.team == ZOMBIES then
 		return nearestForZombie(minion)
 	end
 	local position = minion.root.Position
 	local attacker = minion.attacker
-	if attacker and CombatService.isAlive(attacker) and not CombatService.isLocked(attacker) then
+	if attacker and CombatService.isAlive(attacker) then
 		local point = targetPoint(attacker, position)
 		if point and planarDistance(point, position) <= MinionConfig.RetaliateRange then
 			return attacker, point
@@ -1324,7 +1478,7 @@ for team, interval in MinionConfig.GroupInterval do
 		task.wait(MinionConfig.FirstSpawnDelay)
 		while true do
 			spawnTeam(team)
-			task.wait(if team == ZOMBIES then interval / ZombieEvents.productionFactor() else interval)
+			task.wait(if team == ZOMBIES then interval / ZombieEvents.productionFactor("Core") else interval)
 		end
 	end)
 end
@@ -1339,11 +1493,13 @@ ZombieEvents.NestCreated:Connect(function(nest: BasePart)
 	table.insert(cores[ZOMBIES], nest)
 	SwarmField.rebuild()
 	local centre = nest.Position
+	-- Brutes guard it once they have arrived; plain zombies before that.
+	local guardStats = if ZombieEvents.hasArrived(MinionConfig.Brute.kind) then MinionConfig.Brute else MinionConfig.Zombie
 	for index = 1, NestConfig.Guards do
 		local angle = (index - 1) / NestConfig.Guards * 2 * math.pi + math.pi -- first one on the base side
 		local point = centre + Vector3.new(math.cos(angle), 0, math.sin(angle)) * NestConfig.GuardRadius
 		local ground = spotAround(point, 0, 2)
-		local guard = spawnMinion(ZOMBIES, MinionConfig.Brute, ground, nil)
+		local guard = spawnMinion(ZOMBIES, guardStats, ground, nil)
 		guard.guard, guard.guardPoint = nest, ground
 	end
 	local spawnPoint: SpawnPoint = {
@@ -1361,7 +1517,7 @@ ZombieEvents.NestCreated:Connect(function(nest: BasePart)
 				rolled[index] = rollVariant(stats)
 			end
 			spawnGroup(spawnPoint, rolled)
-			task.wait(NestConfig.GroupInterval / ZombieEvents.productionFactor())
+			task.wait(NestConfig.GroupInterval / ZombieEvents.productionFactor("Nest"))
 		end
 	end)
 end)
@@ -1379,6 +1535,51 @@ ZombieEvents.BurstRequested:Connect(function(count: number)
 				end
 				spawnGroup(spawnPoint, group)
 				left -= #group
+			end
+		end
+	end
+end)
+
+-- Zombie Ambush (ZombieEvents): about `total` plain zombies appear in groups
+-- of 1 to `groupMax` (random sizes) at random open spots across the
+-- battlefield, away from our base and from players.
+local AmbushConfig = Config.Events.Ambush
+local battlefieldGround = arena:FindFirstChild("Battlefield") and arena.Battlefield:FindFirstChild("Ground")
+local function ambushSpot(): Vector3?
+	if not (battlefieldGround and battlefieldGround:IsA("BasePart")) then
+		return nil
+	end
+	local centre, half = battlefieldGround.Position, battlefieldGround.Size / 2 - Vector3.new(AmbushConfig.EdgeMargin, 0, AmbushConfig.EdgeMargin)
+	local baseCores = standingCores(DEFENDERS)()
+	for _ = 1, AmbushConfig.Tries do
+		local spot = Vector3.new(centre.X + (math.random() * 2 - 1) * half.X, 0, centre.Z + (math.random() * 2 - 1) * half.Z)
+		local clear = SwarmField.isOpen(spot)
+		for _, core in baseCores do
+			clear = clear and planarDistance(core.Position, spot) >= AmbushConfig.BaseClearance
+		end
+		for _, player in Players:GetPlayers() do
+			local hero = player.Character
+			local heroRoot = hero and hero:FindFirstChild("HumanoidRootPart")
+			if heroRoot and heroRoot:IsA("BasePart") then
+				clear = clear and planarDistance(heroRoot.Position, spot) >= AmbushConfig.HeroClearance
+			end
+		end
+		if clear then
+			return spot
+		end
+	end
+	return nil
+end
+
+ZombieEvents.AmbushRequested:Connect(function(total: number, groupMax: number)
+	local left = total
+	while left > 0 do
+		local size = math.min(math.random(1, groupMax), left)
+		left -= size
+		local spot = ambushSpot()
+		if spot then
+			for _ = 1, size do
+				spawnMinion(ZOMBIES, MinionConfig.Zombie, spotAround(spot, 0, AmbushConfig.GroupScatter), nil)
 			end
 		end
 	end

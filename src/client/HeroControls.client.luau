@@ -69,17 +69,13 @@ local function isAlive(target: Instance): boolean
 	return target:IsDescendantOf(Workspace) and type(health) == "number" and health > 0
 end
 
--- Same objective-order lock as the server (shared rule in Targeting).
-local function isLocked(target: Instance): boolean
-	return Targeting.isLocked(target, isAlive)
-end
 
 local function isEnemy(character: Model, target: Instance): boolean
 	if target == character or not Targeting.TargetKinds[target:GetAttribute("Kind")] then
 		return false
 	end
 	local team = target:GetAttribute("Team")
-	return type(team) == "string" and team ~= localTeam() and isAlive(target) and not isLocked(target)
+	return type(team) == "string" and team ~= localTeam() and isAlive(target)
 end
 
 -- The point to aim at: a unit's centre, or the point of a structure's box
@@ -281,7 +277,10 @@ local SKILL_KEYS: { [Enum.KeyCode]: SkillKey } = {
 }
 
 local lastCast: { [string]: number } = {}
-local aiming: string? = nil -- the ability whose key is held (its marker shows)
+local aiming: string? = nil -- the ability whose key was pressed last and is still held (its marker shows)
+-- Every ability key held down, in press order (owner 2026-10-23: pressing E
+-- while Q was held used to forget Q, so releasing Q cast nothing).
+local held: { string } = {}
 
 local function hasMastery(id: string): boolean
 	return player:GetAttribute("Mastery" .. id) == true
@@ -315,9 +314,14 @@ local groundParams = RaycastParams.new()
 groundParams.FilterType = Enum.RaycastFilterType.Exclude
 
 -- Where the crosshair meets the ground, pulled back to `range` (flat) from the
--- hero, then dropped onto the ground just below (so not onto a tree top).
-local function aimedGroundPoint(character: Model, root: BasePart, range: number): Vector3
-	local ignore: { Instance } = { character, strikeArea.model, landingArea.model }
+-- hero (and, for Teleport, to before the first fence: Targeting.stopAtFence,
+-- the server's rule), then dropped onto the ground just below (so not onto a
+-- tree top). Fences do not catch the crosshair; the ground behind them does.
+local function aimedGroundPoint(character: Model, root: BasePart, range: number, stopAtFence: boolean?): Vector3
+	local ignore: { Instance } = Targeting.fenceParts()
+	table.insert(ignore, character)
+	table.insert(ignore, strikeArea.model)
+	table.insert(ignore, landingArea.model)
 	local minions = Workspace:FindFirstChild("Minions")
 	if minions then
 		table.insert(ignore, minions)
@@ -336,6 +340,9 @@ local function aimedGroundPoint(character: Model, root: BasePart, range: number)
 	if flat.Magnitude > range then
 		point = root.Position + flat.Unit * range
 	end
+	if stopAtFence then
+		point = Targeting.stopAtFence(root.Position, point)
+	end
 	local from = Vector3.new(point.X, math.max(point.Y, root.Position.Y) + 8, point.Z)
 	local down = Workspace:Raycast(from, Vector3.new(0, -80, 0), groundParams)
 	return if down then down.Position else Vector3.new(point.X, root.Position.Y - 3, point.Z)
@@ -348,7 +355,7 @@ local function drawAreas(character: Model?, root: BasePart?)
 		strikeArea:hide()
 	end
 	if aiming == "Teleport" and character and root then
-		landingArea:place(aimedGroundPoint(character, root, Skills.Teleport.Range))
+		landingArea:place(aimedGroundPoint(character, root, Skills.Teleport.Range, true))
 	else
 		landingArea:hide()
 	end
@@ -360,7 +367,7 @@ local function cast(character: Model, skill: SkillKey)
 		return
 	end
 	lastCast[skill.id] = os.clock()
-	actionEvent:FireServer(skill.id, aimedGroundPoint(character, root, skill.range))
+	actionEvent:FireServer(skill.id, aimedGroundPoint(character, root, skill.range, skill.id == "Teleport"))
 end
 
 -- Attacking --------------------------------------------------------------------
@@ -421,6 +428,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	if not (character and humanoid and root and isAlive(character)) then
 		assistTarget, assistPoint = nil, nil
 		aiming = nil
+		table.clear(held)
 		drawMarker(nil, false, deltaTime)
 		drawAreas(nil, nil)
 		if player:GetAttribute("AimTarget") then
@@ -475,7 +483,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		return
 	end
 	local skill = SKILL_KEYS[input.KeyCode]
-	if skill then
+	if skill and not table.find(held, skill.id) then
+		table.insert(held, skill.id)
 		aiming = skill.id -- shows the marker; the cast happens on release
 	end
 end)
@@ -485,8 +494,10 @@ UserInputService.InputEnded:Connect(function(input)
 		return
 	end
 	local skill = SKILL_KEYS[input.KeyCode]
-	if skill and aiming == skill.id then
-		aiming = nil
+	local index = if skill then table.find(held, skill.id) else nil
+	if skill and index then
+		table.remove(held, index)
+		aiming = held[#held] -- another ability key still down shows its marker again
 		local character = player.Character
 		if character and not menuOpen() then
 			cast(character, skill)

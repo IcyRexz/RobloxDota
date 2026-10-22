@@ -94,13 +94,14 @@ local ZOMBIE: MinionStats = table.freeze({
 
 -- Zombie variants (owner 2026-10-21), mixed into the zombie groups
 -- (Minion.ZombieVariants). Placeholder numbers.
--- Brute: 1.5x the size, twice a zombie's health and damage, slower. Attacks
+-- Brute: 1.5x the size, much more health (owner 2026-10-23: 500, was 240),
+-- twice a zombie's damage, slower. Attacks
 -- with a two-handed overhead smash (owner 2026-10-22) that hits its target
 -- only and, if it is one of our soldiers, throws it back (not heroes or
 -- buildings). No area damage (owner 2026-10-22).
 local BRUTE: MinionStats = table.freeze({
 	kind = "Brute",
-	maxHealth = 240,
+	maxHealth = 500, -- owner 2026-10-23: was 240
 	damage = 24,
 	attackRange = 10, -- owner 2026-10-22: 6, then 12, now 10
 	attackInterval = 1,
@@ -118,7 +119,7 @@ local BRUTE: MinionStats = table.freeze({
 -- slow-firing.
 local SPITTER: MinionStats = table.freeze({
 	kind = "Spitter",
-	maxHealth = 90,
+	maxHealth = 70, -- owner 2026-10-23: was 90, slightly less tanky
 	damage = 10, -- to each thing in the splash
 	attackRange = 20,
 	attackInterval = 2.2,
@@ -144,11 +145,16 @@ local Config = table.freeze({
 
 	-- Gold (T11, owner 2026-10-20): earned by landing the killing hit on a
 	-- zombie with your hero. Nothing to spend it on yet.
+	-- Gold (economy rework, owner 2026-10-23; aim: matches of 15-20 minutes).
+	-- Every zombie death, killed by anyone, gives every player PerDeath for
+	-- its kind (like XP); the player whose hero landed the killing hit also
+	-- gets LastHitBonus. A destroyed Zombie Nest gives every player PerNest.
+	-- Rough rate: 50-70 Gold a minute per player. Upgrades are shared.
 	Gold = table.freeze({
-		PerLastHit = 1, -- placeholder amount
-		-- TEMPORARY, for testing base upgrades (owner 2026-10-21: configurable
-		-- starting gold). Set to 0 once the economy is balanced.
-		Starting = 1000,
+		PerDeath = table.freeze({ Zombie = 1, Spitter = 2, Brute = 4 }) :: { [string]: number },
+		LastHitBonus = 2,
+		PerNest = 40,
+		Starting = 0, -- was a temporary 1000 for testing; the dev panel adds Gold
 	}),
 
 	-- Developer panel under the Gold counter (owner 2026-10-21). Studio only:
@@ -168,21 +174,24 @@ local Config = table.freeze({
 	-- banner for everyone. Timed events end with a second banner; triggering
 	-- one that is still running restarts its timer. Placeholder numbers.
 	Events = table.freeze({
-		FirstAt = 180, -- seconds after server start
-		Interval = 180,
+		FirstAt = 90, -- seconds after server start (owner 2026-10-23: every 1:30, was 3:00)
+		Interval = 90,
 		List = table.freeze({
 			-- A zombie nest rises somewhere mid-field and keeps sending zombies
 			-- until destroyed, guarded by Brutes.
 			table.freeze({ id = "Nest", name = "Zombie Nest", text = "A zombie nest has risen on the battlefield" }),
-			-- The Zombie Core sends its groups 50% more often (nests too) and
-			-- at once sends burstZombies extra zombies (owner 2026-10-22).
+			-- The Zombie Core and nests send their groups more often and the
+			-- core at once sends burstZombies extra zombies (owner 2026-10-22).
 			table.freeze({
 				id = "Surge",
 				name = "Zombie Surge",
-				text = "Zombies pour out 50% faster",
+				text = "Zombies pour out much faster",
 				duration = 45,
-				productionBonus = 0.5,
-				burstZombies = 15,
+				-- owner 2026-10-23: the Zombie Core and nests both 1.5x as often
+				-- (the core was briefly 2.5x), and a burst of 5 (was 15)
+				coreProductionBonus = 0.5,
+				nestProductionBonus = 0.5,
+				burstZombies = 5,
 			}),
 			-- Permanent (owner 2026-10-22, replaces Blood Moon): every zombie,
 			-- living and new, gets +25% health and damage for the rest of the
@@ -193,7 +202,38 @@ local Config = table.freeze({
 				text = "Zombies are permanently 25% stronger",
 				strengthBonus = 0.25,
 			}),
-		}) :: { { id: string, name: string, text: string, duration: number?, productionBonus: number?, burstZombies: number?, strengthBonus: number? } },
+			-- Zombie Ambush (owner 2026-10-23): about ambushTotal plain zombies
+			-- (never Brutes or Spitters) burst out at random open spots all
+			-- over the battlefield, in groups of 1 to ambushGroupMax (random
+			-- sizes, owner 2026-10-23; see Ambush below).
+			table.freeze({
+				id = "Ambush",
+				name = "Zombie Ambush",
+				text = "Zombies burst out all over the field",
+				ambushTotal = 15,
+				ambushGroupMax = 5,
+			}),
+		}) :: { { id: string, name: string, text: string, duration: number?, coreProductionBonus: number?, nestProductionBonus: number?, burstZombies: number?, strengthBonus: number?, ambushTotal: number?, ambushGroupMax: number? } },
+		-- Where ambush groups may appear: open ground on the battlefield, at
+		-- least BaseClearance studs from our Base Core (never inside the base)
+		-- and HeroClearance from any player; each zombie within GroupScatter
+		-- of its group's spot.
+		Ambush = table.freeze({
+			BaseClearance = 70,
+			HeroClearance = 20,
+			EdgeMargin = 20, -- studs kept from the battlefield's edges
+			Tries = 30,
+			GroupScatter = 4,
+		}),
+		-- One-time arrivals (owner 2026-10-23, Brutes at 3:00, Spitters at
+		-- 6:00; were 4:00 / 8:00): the match starts with plain
+		-- zombies only; each variant joins the zombie groups (and nest guards,
+		-- for Brutes) from `at` seconds after the match starts, announced once
+		-- with a banner like the events. Not part of the random rotation.
+		Arrivals = table.freeze({
+			table.freeze({ id = "BruteArrival", kind = "Brute", at = 180, name = "The Brutes Arrive", text = "Huge Brutes now march with the horde" }),
+			table.freeze({ id = "SpitterArrival", kind = "Spitter", at = 360, name = "The Spitters Arrive", text = "Spitters now lob acid from range" }),
+		}) :: { { id: string, kind: string, at: number, name: string, text: string } },
 		Nest = table.freeze({
 			Size = Vector3.new(10, 9, 10),
 			MaxHealth = 800,
@@ -336,14 +376,16 @@ local Config = table.freeze({
 			QuickEvery = 3,
 			BonusFactor = 1,
 		}),
-		-- In-match levels (owner 2026-10-20/21, placeholder numbers): every zombie
-		-- that dies, by anyone's hand, gives every player XP. Kept for the
-		-- session (death does not reset it).
+		-- In-match levels (owner 2026-10-20/21; reworked 2026-10-23): every
+		-- zombie that dies, by anyone's hand, gives every player XpPerDeath for
+		-- its kind. Going from level N to N+1 needs FirstLevelXp + XpGrowth *
+		-- (N - 1): 20, 22, 24... (was a flat 30), so early levels come faster
+		-- and level 25 lands near the end of a 15-20 minute match. Kept for
+		-- the session (death does not reset it).
 		Leveling = table.freeze({
-			XpPerZombieDeath = 1,
-			-- XP needed to go from level N to N+1 is entry N; the last entry
-			-- repeats for every later level (owner: 30 per level for now).
-			XpToLevel = table.freeze({ 30 }),
+			XpPerDeath = table.freeze({ Zombie = 1, Spitter = 2, Brute = 3 }) :: { [string]: number },
+			FirstLevelXp = 20,
+			XpGrowth = 2,
 			MaxLevel = 25,
 		}),
 		-- Masteries (owner 2026-10-21): reaching each of these levels gives one
@@ -411,7 +453,9 @@ local Config = table.freeze({
 		Brute = BRUTE,
 		Spitter = SPITTER,
 		-- Each zombie in a group may instead be a variant: chance per slot,
-		-- rolled in this order (placeholder: about 1 in 10 a Brute, 1 in 7 a Spitter).
+		-- rolled in this order (1 in 10 a Brute, owner 2026-10-23: 10%, then
+		-- 5%, back to 10% to see more of them; 1 in 7 a Spitter). A variant only appears once it has
+		-- arrived (Events.Arrivals); before that every slot is a plain zombie.
 		ZombieVariants = table.freeze({
 			table.freeze({ stats = BRUTE, chance = 0.1 }),
 			table.freeze({ stats = SPITTER, chance = 0.15 }),
@@ -467,7 +511,6 @@ local Config = table.freeze({
 		-- TEMPORARY, for simulation only: extra health and damage per team, so one
 		-- side wins the push. Remove before release.
 		TestTeamBonus = table.freeze({}) :: { [string]: number }, -- e.g. { Defenders = 0.2 }
-		BarracksBonus = 0.25, -- +25% health and damage after the enemy inhibitor (barracks) falls
 		-- Archer shot: draws the bow, then the arrow flies; damage lands on arrival.
 		ArcherDrawTime = 0.3,
 		ArrowSpeed = 60, -- studs per second

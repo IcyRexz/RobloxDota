@@ -13,16 +13,16 @@ Status key: **OPEN** (not started), **PARTLY** (some of it built), **DECIDED** (
 
 ## 2. MOBA leftovers: PARTLY
 - Pushing out is now the intended win (DECIDED), so soldiers marching to the Zombie Core is correct.
-- **Barracks-destroyed bonus still live** (`Minions.server.luau:463`): when zombies destroy one of our barracks, every new zombie gets +25% health and damage for the rest of the session (`BarracksBonus = 0.25`). Zombies have no barracks, so we can never get it. Decide: keep it as a "losing ground hurts" rule, or cut it.
-- **Lock rule still on our side** (`GuardedBy` in `src/map/PlayerBase.model.json`): zombies cannot hurt a barracks until its tower falls, or the Base Core until a barracks falls. The Zombie Core has no guard. Decide: keep (MOBA-style layers of defence) or cut (core always hittable).
+- **DONE 2026-10-23, removed:** **Barracks-destroyed bonus still live** (`Minions.server.luau:463`): when zombies destroy one of our barracks, every new zombie gets +25% health and damage for the rest of the session (`BarracksBonus = 0.25`). Zombies have no barracks, so we can never get it. Decide: keep it as a "losing ground hurts" rule, or cut it.
+- **DONE 2026-10-23, removed:** **Lock rule still on our side** (`GuardedBy` in `src/map/PlayerBase.model.json`): zombies cannot hurt a barracks until its tower falls, or the Base Core until a barracks falls. The Zombie Core has no guard. Decide: keep (MOBA-style layers of defence) or cut (core always hittable).
 - Soldier `Lifetime` 600 s is now only a safety net for stuck units: fine.
-- **Unit caps are off** (`MaxAlive = math.huge` for the stress test). Must go back to real numbers (were 40 / 70) after the frame-rate test.
+- **Unit caps are off** (owner 2026-10-23: leave them off for now) (`MaxAlive = math.huge` for the stress test). Must go back to real numbers (were 40 / 70) after the frame-rate test.
 
 ## 3. Pressure curve: PARTLY
 - Built: Brute and Spitter variants (10% / 15% of zombie slots); battlefield events every 180 s (Nest, Surge with a 15-zombie burst, Evolve +25% zombie strength each time, permanent).
 - Missing: steady time escalation (zombie stats or group size by minute), frontline pressure (more zombies the closer we push), a runner type that slips past soldiers, the boss (T22). Evolve only happens when it is rolled, so escalation is random.
 
-## 4. Economy: OPEN (next)
+## 4. Economy: REWORKED 2026-10-23 (shared Gold per zombie death by kind + last-hit bonus + nest reward, start at 0; XP 20 + 2 per level, by kind; numbers to be tuned from the Studio [Economy] log; see GDD). History below.
 - Income: 1 Gold per killing blow by your hero (`PerLastHit`). Zombies arrive at 4 every 4 s (60 a minute). Soldiers, towers and allies take most kills; a player landing about 15 a minute earns about 15 Gold a minute.
 - Costs: 18 upgrades, 3,850 Gold in total. That is about 4 hours of play for one player. `Gold.Starting = 1000` (TEMPORARY) and the dev panel's +200 Gold hide this.
 - Gold is per player, upgrades are shared by the side: one player can fund everything or spend on something the others did not want.

@@ -4,10 +4,7 @@
 -- keep their health in the server-owned Health/MaxHealth attributes. Heroes and
 -- backdoor protection are added when hero damage exists.
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-
-local Targeting = require(ReplicatedStorage.Shared.Targeting)
 
 local CombatService = {}
 
@@ -52,13 +49,6 @@ function CombatService.isAlive(target: Instance): boolean
 	return target.Parent ~= nil and CombatService.getHealth(target) > 0
 end
 
--- Objectives fall in order: a lane's tower, then its inhibitor (barracks), then
--- the core once either inhibitor is down. The rule lives in Targeting.isLocked
--- (shared with the client's target marker) and reads "GuardedBy" from the map.
-function CombatService.isLocked(target: Instance): boolean
-	return Targeting.isLocked(target, CombatService.isAlive)
-end
-
 -- Spawn protection: a hero just back from death takes no damage until the
 -- server time in its ProtectedUntil attribute (set by Heroes.server).
 local function isProtected(target: Instance): boolean
@@ -69,7 +59,8 @@ end
 -- Deals damage from an attacker to a target. attackerTeam is captured by the
 -- caller when the attack starts, so a delayed hit still knows its side.
 -- Returns the damage actually dealt (0 if the hit was refused: bad amount,
--- same team, already dead, locked or spawn-protected).
+-- same team, already dead or spawn-protected). Every structure can be hit at
+-- any time (owner 2026-10-23: the tower -> barracks -> core lock is gone).
 function CombatService.applyDamage(target: Instance, amount: number, attacker: Instance, attackerTeam: string): number
 	if not isValidAmount(amount) then
 		return 0
@@ -77,7 +68,7 @@ function CombatService.applyDamage(target: Instance, amount: number, attacker: I
 	if target:GetAttribute("Team") == attackerTeam then
 		return 0
 	end
-	if not CombatService.isAlive(target) or CombatService.isLocked(target) or isProtected(target) then
+	if not CombatService.isAlive(target) or isProtected(target) then
 		return 0
 	end
 

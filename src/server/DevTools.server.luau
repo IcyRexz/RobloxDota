@@ -11,6 +11,8 @@
 --   "Spawn", kind: one unit of that kind; zombies Config.Dev.ZombieDistance
 --     studs in front of the sender's hero, our soldiers SoldierDistance beside it.
 --   "NextEvent": start the next battlefield event now (ZombieEvents).
+--   "Event", id: start that event or arrival now (an id from Config.Events
+--     List or Arrivals).
 --   "Die": the sender's hero drops to 0 health and goes down (Heroes.server).
 --   Ignored outside Studio, for unknown commands or kinds, or faster than MIN_GAP.
 
@@ -62,6 +64,11 @@ local commands: { [string]: (Player, unknown) -> () } = {
 	Spawn = spawnUnit,
 	NextEvent = function()
 		ZombieEvents.triggerNext()
+	end,
+	Event = function(_player, id)
+		if type(id) == "string" then
+			ZombieEvents.trigger(id)
+		end
 	end,
 	Die = function(player)
 		local character = player.Character

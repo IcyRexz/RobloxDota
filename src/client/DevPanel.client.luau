@@ -2,9 +2,11 @@
 -- Developer panel just under the Gold counter (owner 2026-10-21), in the UI
 -- design system (docs/11_UI_DESIGN.md): a small surface panel with rows of
 -- buttons, right-aligned under the counter:
+--   TOOLS  Hide / Show                 (minimises the panel to this row)
 --   DEV    +30 XP  +200 Gold          (amounts from Config.Dev)
 --   SPAWN  Zombie Brute Spitter Swordsman Archer   (Config.Dev.SpawnKinds)
---   EVENT  Next event
+--   EVENT  Next  Zombie Nest  Zombie Surge  ...    (any event, Config.Events.List)
+--   ARRIVE Brutes  Spitters            (arrivals now, Config.Events.Arrivals)
 --   HERO   Die
 -- The camera locks the mouse in first person, so ` (backquote) frees it for
 -- clicking the panel (a Modal button) and locks it again. Shown only in
@@ -25,8 +27,11 @@ end
 local space = UiTheme.space
 local ROW_HEIGHT = space(7)
 local MOUSE_KEY = Enum.KeyCode.Backquote
--- Gold counter: space(3) from the top, space(8) tall at UiTheme.Scale.
-local TOP = space(3) + space(8) * UiTheme.Scale + space(2)
+-- Just under the Gold counter: space(3) from the top, space(8) tall at
+-- UiTheme.Scale times the screen factor (it follows the window size).
+local function topOffset(): number
+	return space(3) + space(8) * UiTheme.Scale * UiTheme.screenFactor() + space(2)
+end
 local ZOMBIE_KINDS = { Zombie = true, Brute = true, Spitter = true }
 local KIND_LABELS: { [string]: string } = { Melee = "Swordsman" }
 
@@ -42,7 +47,9 @@ screen.Parent = player:WaitForChild("PlayerGui")
 local panel = UiTheme.panel(screen)
 panel.Name = "Panel"
 panel.AnchorPoint = Vector2.new(1, 0)
-panel.Position = UDim2.new(1, -space(3), 0, TOP)
+UiTheme.onScreenResize(function()
+	panel.Position = UDim2.new(1, -space(3), 0, topOffset())
+end)
 panel.Size = UDim2.fromOffset(0, 0)
 panel.AutomaticSize = Enum.AutomaticSize.XY
 UiTheme.applyScale(panel)
@@ -82,7 +89,7 @@ local function row(order: number, captionText: string): Frame
 	return frame
 end
 
-local function button(parent: Frame, order: number, label: string, color: Color3, command: string, kind: string?)
+local function button(parent: Frame, order: number, label: string, color: Color3, command: string?, kind: string?): TextButton
 	local b = Instance.new("TextButton")
 	b.Name = label
 	b.LayoutOrder = order
@@ -108,9 +115,12 @@ local function button(parent: Frame, order: number, label: string, color: Color3
 	b.MouseLeave:Connect(function()
 		b.BackgroundTransparency = UiTheme.RaisedTransparency
 	end)
-	b.Activated:Connect(function()
-		commandEvent:FireServer(command, kind)
-	end)
+	if command then
+		b.Activated:Connect(function()
+			commandEvent:FireServer(command, kind)
+		end)
+	end
+	return b
 end
 
 local devRow = row(1, "DEV")
@@ -124,13 +134,33 @@ for index, kind in Config.Dev.SpawnKinds do
 end
 
 local eventRow = row(3, "EVENT")
-button(eventRow, 1, "Next event", UiTheme.Text, "NextEvent")
+button(eventRow, 1, "Next", UiTheme.Text, "NextEvent")
+for index, info in Config.Events.List do
+	button(eventRow, index + 1, info.name, UiTheme.Gold, "Event", info.id)
+end
 
-local heroRow = row(4, "HERO")
+local arriveRow = row(4, "ARRIVE")
+for index, arrival in Config.Events.Arrivals do
+	button(arriveRow, index, arrival.name, UiTheme.Enemy, "Event", arrival.id)
+end
+
+local heroRow = row(5, "HERO")
 button(heroRow, 1, "Die", UiTheme.Enemy, "Die")
 
 local hint = UiTheme.text(panel, UiTheme.TextSize.Caption, UiTheme.Font.Medium, UiTheme.Strength.Faint)
-hint.LayoutOrder = 5
+hint.LayoutOrder = 6
+
+-- Minimise (owner 2026-10-23): Hide folds the panel down to its top row.
+local toolsRow = row(0, "TOOLS")
+local toggle = button(toolsRow, 1, "Hide", UiTheme.Text)
+local folded: { GuiObject } = { devRow, spawnRow, eventRow, arriveRow, heroRow, hint }
+toggle.Activated:Connect(function()
+	local hide = toggle.Text == "Hide"
+	for _, item in folded do
+		item.Visible = not hide
+	end
+	toggle.Text = if hide then "Show" else "Hide"
+end)
 hint.Size = UDim2.fromOffset(0, space(4))
 hint.AutomaticSize = Enum.AutomaticSize.X
 hint.TextTruncate = Enum.TextTruncate.None

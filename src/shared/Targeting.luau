@@ -35,27 +35,6 @@ function Targeting.aimPointOf(target: Instance, from: Vector3): Vector3?
 	return if root then root.Position else nil
 end
 
--- Objective order, read from the map: a structure's "GuardedBy" attribute names
--- the structures protecting it (comma-separated). It cannot be damaged while ALL
--- of them still stand; once any guard is gone (destroyed structures are removed
--- from the map), it unlocks. An inhibitor lists its lane's tower; the Base Core
--- lists both inhibitors, so it opens when either lane breaks.
--- isAlive is passed in because the server and client check health differently.
-function Targeting.isLocked(target: Instance, isAlive: (Instance) -> boolean): boolean
-	local guards = target:GetAttribute("GuardedBy")
-	local arena = Workspace:FindFirstChild("Arena")
-	if typeof(guards) ~= "string" or guards == "" or not arena then
-		return false
-	end
-	for name in string.gmatch(guards, "[^,%s]+") do
-		local guard = arena:FindFirstChild(name, true)
-		if not (guard and isAlive(guard)) then
-			return false
-		end
-	end
-	return true
-end
-
 -- Things attacks pass through (owner decisions 2026-10-20): hills (Terrain) and
 -- fences. Fence collision parts block walking, and Roblox always lets raycasts
 -- hit a part that collides (CanQuery only works with CanCollide off), so they
@@ -89,6 +68,35 @@ function Targeting.seeThrough(): { Instance }
 		end
 	end
 	return list
+end
+
+-- The map's fence collision parts (Kind = "Fence").
+function Targeting.fenceParts(): { Instance }
+	local list = Targeting.seeThrough()
+	table.remove(list, 1) -- Terrain
+	return list
+end
+
+-- Teleport rule (owner 2026-10-23: follow the marker, never through a fence),
+-- shared by the client's landing marker and the server: `to` pulled back along
+-- the flat line from `from` to just before the first fence in the way. A tall
+-- box is swept so a fence is found on hills too. Keeps `to`'s height.
+Targeting.FenceStopMargin = 2.5 -- studs kept between the landing and the fence
+local FENCE_SWEEP = Vector3.new(0.5, 14, 0.5)
+function Targeting.stopAtFence(from: Vector3, to: Vector3): Vector3
+	local flat = Vector3.new(to.X - from.X, 0, to.Z - from.Z)
+	if flat.Magnitude < 0.01 then
+		return to
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = Targeting.fenceParts()
+	local hit = Workspace:Blockcast(CFrame.new(from), FENCE_SWEEP, flat, params)
+	if not hit then
+		return to
+	end
+	local stop = from + flat.Unit * math.max(hit.Distance - Targeting.FenceStopMargin, 0)
+	return Vector3.new(stop.X, to.Y, stop.Z)
 end
 
 -- Nothing solid between two points. Units (minions, characters), hills and

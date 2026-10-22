@@ -27,6 +27,9 @@ Static checks (luau-lsp, selene, scratch `rojo build`) passed on 2026-10-21; not
 
 - [ ] 2.1 WASD, jump (Space). **Expect:** smooth, jump works, cannot walk through fences, trees or rocks.
 - [ ] 2.1a Dev panel HERO Die (solo). **Expect:** the body lies down where you stood, grey screen with "YOU DIED" and "Respawn in 5" counting down, "You have fallen" popup on the right, crosshair gone, the mouse orbits the camera round the body and the wheel zooms, WASD/Space do nothing; at 0 you appear on the pad at full health in first person with colour back.
+- [ ] 2.1b Resize the Studio window (or try 1280x720 and full screen). **Expect:** HUD, minimap, party list, Gold, target panel and menus grow and shrink with the window height and stay on screen.
+- [ ] 2.1c Hold Q, press and hold E, release Q, then release E. **Expect:** Strike casts on Q's release (if off cooldown), then Teleport on E's. Aim the teleport marker past a fence: it stops just before the fence and you land there.
+- [ ] 2.1d Watch the timer above the minimap's top right. **Expect:** counts up from 0:00; during a Zombie Surge a red "Zombie Surge 0:45" pill counts down beside it and disappears at the end. Only plain zombies until 4:00 ("THE BRUTES ARRIVE" banner), Spitters from 8:00. Brutes are clearly darker than zombies, eyes red at eye height with no face behind them, blood streaks and rot patches visible (check the details sit on the body, not floating or hidden inside it).
 - [ ] 2.2 Walk to the map edge. **Expect:** forest belt + invisible boundary stops you.
 
 ## 3. Lightning Bolt (left mouse)

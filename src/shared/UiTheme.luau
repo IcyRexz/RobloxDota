@@ -19,6 +19,7 @@
 --  6. Spacing in steps of 4 pixels.
 
 local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 
 local UiTheme = {}
 
@@ -107,6 +108,12 @@ UiTheme.Bar = table.freeze({
 -- a little bigger again with the blocky style). Elements keep their anchor.
 UiTheme.Scale = 1.5 -- HUD pieces: health/abilities, Gold, minimap, banners, crosshair
 UiTheme.MenuScale = 1.5 -- full menus (still shrunk to fit small screens)
+-- Fits the screen (owner 2026-10-23): those scales are right for a window
+-- ReferenceHeight pixels tall; on other windows everything grows or shrinks
+-- with the window's height, between MinScreenFactor and MaxScreenFactor.
+UiTheme.ReferenceHeight = 900
+UiTheme.MinScreenFactor = 0.6
+UiTheme.MaxScreenFactor = 1.6
 
 -- 6. Spacing -------------------------------------------------------------------------
 -- UiTheme.space(3) = 12. Use for padding, gaps and offsets.
@@ -116,10 +123,51 @@ end
 
 -- Helpers ------------------------------------------------------------------------------
 
--- Draws a screen element at UiTheme.Scale (or a given scale) around its anchor.
+-- How much larger than at ReferenceHeight the window is (clamped).
+function UiTheme.screenFactor(): number
+	local camera = Workspace.CurrentCamera
+	local height = if camera then camera.ViewportSize.Y else UiTheme.ReferenceHeight
+	return math.clamp(height / UiTheme.ReferenceHeight, UiTheme.MinScreenFactor, UiTheme.MaxScreenFactor)
+end
+
+-- Calls `apply` now and again whenever the window changes size.
+local resizeEvent = Instance.new("BindableEvent")
+local watchedCamera: Camera? = nil
+local cameraConnection: RBXScriptConnection? = nil
+local function watchCamera()
+	local camera = Workspace.CurrentCamera
+	if camera == watchedCamera then
+		return
+	end
+	watchedCamera = camera
+	if cameraConnection then
+		cameraConnection:Disconnect()
+	end
+	if camera then
+		cameraConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			resizeEvent:Fire()
+		end)
+	end
+	resizeEvent:Fire()
+end
+watchCamera()
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(watchCamera)
+function UiTheme.onScreenResize(apply: () -> ()): RBXScriptConnection
+	apply()
+	return resizeEvent.Event:Connect(apply)
+end
+
+-- Draws a screen element at UiTheme.Scale (or a given scale) around its
+-- anchor, times screenFactor, following the window size.
 function UiTheme.applyScale(target: GuiObject, scale: number?): UIScale
 	local uiScale = Instance.new("UIScale")
-	uiScale.Scale = scale or UiTheme.Scale
+	local base = scale or UiTheme.Scale
+	local connection = UiTheme.onScreenResize(function()
+		uiScale.Scale = base * UiTheme.screenFactor()
+	end)
+	uiScale.Destroying:Connect(function()
+		connection:Disconnect()
+	end)
 	uiScale.Parent = target
 	return uiScale
 end

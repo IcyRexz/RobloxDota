@@ -54,6 +54,8 @@ Helpers: `UiTheme.text`, `UiTheme.outlineText`, `UiTheme.inkText`, `UiTheme.bloc
 - **Revive prompt** (`Revive.client.luau`, owner 2026-10-23): over a downed ally's body, a 170 x 46 navy block (always on top): a 26 px gold F key chip, "Revive <name>" in Fredoka Body and a 6 px green bar that fills while you hold F. Never shown on your own body or while you are down.
 - **Crosshair**: white, turning enemy red exactly while the red target marker is on (a click would hit).
 - **Minimap**: the map inside a surface panel (radius 8); dots use ally green and enemy red; you are a white dot with a facing tick.
+- **Match timer** (`MatchTimer.client.luau`, owner 2026-10-23): a row hanging just above the minimap's top-right corner (scales with it): a navy pill with the match time counting up (m:ss, Fredoka Value), and to its left a red pill per running timed event with its name and time left ("Zombie Surge 0:32"), gone when it ends.
+- **Fits the screen** (owner 2026-10-23): `UiTheme.Scale` and `MenuScale` are the sizes for a window `ReferenceHeight` (900) pixels tall; `UiTheme.applyScale` multiplies by `screenFactor()` (window height / 900, clamped 0.6 to 1.6) and follows window resizes. Menus and the Tab board also use it in their fit-to-screen. World billboards (revive prompt) keep a fixed size.
 - **Floating text** (`src/shared/FloatingText.luau`, damage numbers and "+1" gold): Fredoka One with an ink outline sized for its full size; pops in slightly small, springs to 125% and settles (0.3 s), holds 0.45 s, then drifts up and fades (0.9 s). White for damage you deal, enemy red for damage you take, gold for gold; bigger hits get bigger numbers.
 
 ## Not covered: things in the game world

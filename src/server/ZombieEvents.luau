@@ -7,14 +7,24 @@
 --    open ground mid-field. This module only places the part; Minions.server
 --    listens to NestCreated to spawn its guards and its zombies, and to send
 --    our soldiers at it. It falls like any structure (Structures.server).
---  * Zombie Surge (timed): productionFactor is higher while it runs, and
---    BurstRequested asks Minions.server for extra zombies at once.
+--  * Zombie Surge (timed): productionFactor is higher while it runs (the
+--    Zombie Core and nests each by their own share), and BurstRequested asks
+--    Minions.server for extra zombies at once.
 --  * Zombies Evolve (permanent): strengthBonus grows for the rest of the
 --    match; Strengthened tells Minions.server to restat living zombies.
--- A ModuleScript: the clock starts when first required (Minions requires it).
+--  * Zombie Ambush: AmbushRequested asks Minions.server for plain zombies in
+--    groups of random size at random spots across the battlefield.
+--  * Arrivals (owner 2026-10-23, Config.Events.Arrivals): one-time, at fixed
+--    times. Brutes and Spitters only join the zombie groups once theirs has
+--    happened (hasArrived); each is announced once with a banner.
+-- A ModuleScript: the match clock starts when first required (Minions
+-- requires it at server start; there is no lobby yet, T05).
 --
 -- Remote: ZombieEvent (server -> all clients): (event id: string, phase:
 --   "Start" | "End"), so clients can show the banner. Display only.
+-- Workspace attributes for the clients' timers (server time,
+-- Workspace:GetServerTimeNow()): MatchStartedAt, and Event<id>EndsAt while a
+-- timed event runs (removed when it ends).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -38,6 +48,9 @@ ZombieEvents.NestCreated = nestCreated.Event
 local burstRequested = Instance.new("BindableEvent")
 -- Fires (count) when an event sends extra zombies from the Zombie Core at once.
 ZombieEvents.BurstRequested = burstRequested.Event
+local ambushRequested = Instance.new("BindableEvent")
+-- Fires (total zombies, largest group) for a Zombie Ambush.
+ZombieEvents.AmbushRequested = ambushRequested.Event -- (total, groupMax)
 local strengthened = Instance.new("BindableEvent")
 -- Fires (old bonus, new bonus) when zombies get permanently stronger.
 ZombieEvents.Strengthened = strengthened.Event
@@ -52,7 +65,21 @@ local runToken: { [string]: number } = {} -- bumps on each start, so only the la
 local lastId: string? = nil
 local nestCount = 0
 local permanentStrength = 0 -- Zombies Evolve, summed (0.25 = +25%)
-local nextAt = os.clock() + EventConfig.FirstAt
+local startedAt = os.clock()
+local nextAt = startedAt + EventConfig.FirstAt
+local arrived: { [string]: boolean } = {} -- variant kind -> joined the horde
+Workspace:SetAttribute("MatchStartedAt", Workspace:GetServerTimeNow())
+
+-- Whether a zombie variant (MinionStats kind) may appear yet. Plain zombies
+-- and kinds without an arrival always may.
+function ZombieEvents.hasArrived(kind: string): boolean
+	for _, arrival in EventConfig.Arrivals do
+		if arrival.kind == kind then
+			return arrived[kind] == true
+		end
+	end
+	return true
+end
 
 local function bonus(field: string): number
 	local now = os.clock()
@@ -66,9 +93,10 @@ local function bonus(field: string): number
 	return total
 end
 
--- How much faster zombie groups come out (1 = normal).
-function ZombieEvents.productionFactor(): number
-	return 1 + bonus("productionBonus")
+-- How much faster zombie groups come out (1 = normal), from the Zombie Core
+-- ("Core") or a nest ("Nest").
+function ZombieEvents.productionFactor(source: "Core" | "Nest"): number
+	return 1 + bonus(if source == "Nest" then "nestProductionBonus" else "coreProductionBonus")
 end
 
 -- Permanent extra zombie health and damage from Zombies Evolve (0.25 = +25%).
@@ -156,6 +184,9 @@ local function start(info: EventInfo)
 	if info.burstZombies then
 		burstRequested:Fire(info.burstZombies)
 	end
+	if info.ambushTotal and info.ambushGroupMax then
+		ambushRequested:Fire(info.ambushTotal, info.ambushGroupMax)
+	end
 	if info.strengthBonus then
 		local old = permanentStrength
 		permanentStrength += info.strengthBonus
@@ -166,9 +197,11 @@ local function start(info: EventInfo)
 		local token = (runToken[info.id] or 0) + 1
 		runToken[info.id] = token
 		activeUntil[info.id] = os.clock() + duration
+		Workspace:SetAttribute(`Event{info.id}EndsAt`, Workspace:GetServerTimeNow() + duration)
 		task.delay(duration, function()
 			if runToken[info.id] == token then
 				activeUntil[info.id] = nil
+				Workspace:SetAttribute(`Event{info.id}EndsAt`, nil)
 				bannerEvent:FireAllClients(info.id, "End")
 				print(`[ZombieEvents] {info.name} ended`)
 			end
@@ -195,10 +228,44 @@ function ZombieEvents.triggerNext()
 	start(pick())
 end
 
+local function arrive(arrival: typeof(EventConfig.Arrivals[1]))
+	if arrived[arrival.kind] then
+		return
+	end
+	arrived[arrival.kind] = true
+	bannerEvent:FireAllClients(arrival.id, "Start")
+	print(`[ZombieEvents] {arrival.name}`)
+end
+
+-- Starts one named event or arrival now (DevTools, owner 2026-10-23: choose
+-- the event). An event does not move the regular clock. Returns whether the
+-- id was known.
+function ZombieEvents.trigger(id: string): boolean
+	for _, info in EventConfig.List do
+		if info.id == id then
+			start(info)
+			return true
+		end
+	end
+	for _, arrival in EventConfig.Arrivals do
+		if arrival.id == id then
+			arrive(arrival)
+			return true
+		end
+	end
+	return false
+end
+
 task.spawn(function()
 	while true do
 		task.wait(1)
-		if os.clock() >= nextAt then
+		local now = os.clock()
+		for _, arrival in EventConfig.Arrivals do
+			if now - startedAt >= arrival.at then
+				arrive(arrival)
+			end
+		end
+		if now >= nextAt then
 			ZombieEvents.triggerNext()
 		end
 	end

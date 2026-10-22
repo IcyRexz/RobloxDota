@@ -501,7 +501,7 @@ function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 
 	local function fitToScreen()
 		local viewport = Workspace.CurrentCamera.ViewportSize
-		fit.Scale = math.min(UiTheme.MenuScale, (viewport.X - 48) / MenuKit.WIDTH, (viewport.Y - 64) / MenuKit.HEIGHT)
+		fit.Scale = math.min(UiTheme.MenuScale * UiTheme.screenFactor(), (viewport.X - 48) / MenuKit.WIDTH, (viewport.Y - 64) / MenuKit.HEIGHT)
 	end
 
 	local menu: Menu = {

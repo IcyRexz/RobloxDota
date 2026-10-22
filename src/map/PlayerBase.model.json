@@ -266,7 +266,6 @@
         "Kind": "Core",
         "MaxHealth": 1000,
         "Health": 1000,
-        "GuardedBy": "MeleeBarracks,ArcherBarracks",
         "Icon": "🛡️"
       }
     },
@@ -415,7 +414,6 @@
         "Kind": "Barracks",
         "MaxHealth": 700,
         "Health": 700,
-        "GuardedBy": "LeftTower",
         "Icon": "⚔️",
         "DisplayName": "Barracks"
       }
@@ -557,7 +555,6 @@
         "Kind": "Barracks",
         "MaxHealth": 700,
         "Health": 700,
-        "GuardedBy": "RightTower",
         "Icon": "🏹",
         "DisplayName": "Barracks"
       }

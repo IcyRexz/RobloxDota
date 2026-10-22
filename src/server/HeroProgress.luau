@@ -2,7 +2,8 @@
 -- In-match XP, levels and masteries for each player (owner 2026-10-20 /
 -- 2026-10-21; numbers in Config.Hero).
 --  * Every zombie that dies (killed by anyone: players, minions, towers) gives
---    every player XpPerZombieDeath. Levels stop at MaxLevel (25).
+--    every player XpPerDeath for its kind. Each level needs a little more XP
+--    than the last (FirstLevelXp, XpGrowth). Levels stop at MaxLevel (25).
 --  * Each level-up raises max health and damage by Config.Hero.Growth (no
 --    choices); the hero heals by the max health gained.
 --  * Reaching a level in MasteryLevels (5, 10, 15, 20, 25) gives one mastery
@@ -57,8 +58,7 @@ local function xpToNext(level: number): number
 	if level >= Leveling.MaxLevel then
 		return 0 -- max level: no more XP needed
 	end
-	local steps = Leveling.XpToLevel
-	return steps[math.min(level, #steps)]
+	return Leveling.FirstLevelXp + Leveling.XpGrowth * (level - 1)
 end
 
 local function isMasteryLevel(level: number): boolean
@@ -211,8 +211,10 @@ CombatService.Died:Connect(function(target: Instance)
 	if target:GetAttribute("Kind") ~= "Minion" or target:GetAttribute("Team") ~= Config.Teams.Zombies then
 		return
 	end
+	local kind = target:GetAttribute("MinionType")
+	local xp = (if type(kind) == "string" then Leveling.XpPerDeath[kind] else nil) or Leveling.XpPerDeath.Zombie
 	for _, player in Players:GetPlayers() do
-		HeroProgress.addXp(player, Leveling.XpPerZombieDeath)
+		HeroProgress.addXp(player, xp)
 	end
 end)
 
