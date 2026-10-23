@@ -7,17 +7,22 @@
 -- rooms, never the battle. This draws:
 --   * each dais's prompt (custom style; Roblox still handles the key):
 --     "E  Create lobby" while no room is open there (LobbyMenu.client then
---     shows the Create lobby panel), "E  Join battle" / "E  Leave battle" /
---     "E  Lobby full" while one is open or waiting.
+--     shows the Create lobby panel), "E  Join battle" / "E  Lobby full"
+--     while one is open or waiting. While the player is in a room every
+--     prompt is switched off for them (locally): only Exit lobby leaves.
 --   * each dais's notice board, the only countdown (owner 2026-10-23: not
 --     twice, just the board): "Start a new game here" while no room is open;
 --     otherwise the map's name, "2/4 players" and "Starting in 7" with the
 --     number in red, or "Waiting for the battlefield".
 -- Reads each dais's RoomState / RoomMap / RoomMaxPlayers / RoomSize /
 -- CountdownEndsAt and the local player's InRoom (their room's pad number).
--- Display only.
+-- Also the smooth side of the dais leash (owner 2026-10-23): while in a
+-- room the character's centre is kept LEASH_INSET inside its dais's edge,
+-- each frame after physics. The server (Match.luau) still pulls back anyone
+-- beyond the edge, so this only makes the edge feel like a wall.
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -34,6 +39,8 @@ local PROMPT_WIDTH = 170
 local PROMPT_HEIGHT = 46
 local KEY = 26
 local RED_HEX = UiTheme.Enemy:ToHex() -- countdown numbers (owner 2026-10-23)
+local LEASH_INSET = 1 -- studs inside the dais edge (Match.luau uses the same)
+local LEASH_REACH = 4 -- studs beyond the edge this still holds; farther is the server's
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -48,10 +55,6 @@ end
 local function roomState(dais: Instance): string
 	local value = dais:GetAttribute("RoomState")
 	return if type(value) == "string" then value else "Idle"
-end
-
-local function padOf(item: Instance): number
-	return math.floor(readNumber(item, "Pad"))
 end
 
 local function mapName(dais: Instance): string
@@ -76,8 +79,6 @@ local function promptText(prompt: ProximityPrompt): string
 	end
 	if roomState(dais) == "Idle" then
 		return "Create lobby"
-	elseif readNumber(player, "InRoom") == padOf(dais) then
-		return "Leave battle"
 	end
 	local full = readNumber(dais, "RoomSize") >= readNumber(dais, "RoomMaxPlayers")
 	return if full then "Lobby full" else "Join battle"
@@ -210,6 +211,46 @@ local function refreshBoard(board: Board)
 		board.wait.Text = `Starting in <font color="#{RED_HEX}">{left}</font>`
 	end
 end
+
+-- In a room: no dais prompts (they would only join another room).
+local function refreshPromptsEnabled()
+	local free = player:GetAttribute("InRoom") == nil
+	for _, item in lobby:GetDescendants() do
+		if item:IsA("ProximityPrompt") and item.Name == "QueuePrompt" then
+			item.Enabled = free
+		end
+	end
+end
+player:GetAttributeChangedSignal("InRoom"):Connect(refreshPromptsEnabled)
+refreshPromptsEnabled()
+
+-- The leash: keeps the character inside its room's dais. Runs after physics
+-- so the edge holds before the frame is drawn; outward speed is dropped so
+-- the character does not keep pushing through.
+RunService.PostSimulation:Connect(function()
+	local pad = readNumber(player, "InRoom")
+	local dais = if pad > 0 then lobby:FindFirstChild(`QueueDais{pad}`) else nil
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not (dais and dais:IsA("BasePart") and root and root:IsA("BasePart")) then
+		return
+	end
+	local centre = dais.Position
+	local offset = Vector3.new(root.Position.X - centre.X, 0, root.Position.Z - centre.Z)
+	local limit = Config.Lobby.QueueRadius - LEASH_INSET
+	local distance = offset.Magnitude
+	if distance <= limit or distance > Config.Lobby.QueueRadius + LEASH_REACH then
+		return
+	end
+	local outward = offset.Unit
+	local held = Vector3.new(centre.X, root.Position.Y, centre.Z) + outward * limit
+	root.CFrame = root.CFrame.Rotation + held
+	local velocity = root.AssemblyLinearVelocity
+	local away = velocity:Dot(outward)
+	if away > 0 then
+		root.AssemblyLinearVelocity = velocity - outward * away
+	end
+end)
 
 GameContext.renderStepped("Lobby", function()
 	for _, board in boards do

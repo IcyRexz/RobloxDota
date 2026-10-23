@@ -1,7 +1,11 @@
 --!strict
--- Announcement banner near the top of the screen, in the game's UI design
--- system (docs/11_UI_DESIGN.md): a surface pill with a white headline and a
--- dimmer subline, e.g.
+-- Announcement banner just left of the core strip (CoreStrip.client), its
+-- top level with the strip's, growing leftward toward the party portraits
+-- (owner 2026-10-23: at the top middle it covered the target panel; option A
+-- of five). In the game's UI design system (docs/11_UI_DESIGN.md): a block
+-- with a white headline and a dimmer subline, centred in it (owner
+-- 2026-10-23). It is as wide as its text, but never wider than the gap between
+-- the portraits and the strip: longer lines wrap. E.g.
 --   Zombies lost a core
 --   Enemy core destroyed
 -- No team colours. Banners queue, so two quick events show one after another.
@@ -17,6 +21,7 @@
 -- and who is revived (HeroDowned, from Heroes.server).
 
 local Players = game:GetService("Players")
+local TextService = game:GetService("TextService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
@@ -31,6 +36,9 @@ local FADE_SECONDS = 0.25
 local POPUP_SECONDS = 4
 local POPUP_MAX = 4 -- older popups are dropped beyond this
 local POPUP_DOT = 10
+local BANNER_PAD_X = space(6) -- each side, at 1x
+local BANNER_MIN_WIDTH = 160 -- at 1x; on a very narrow window it may reach the portraits
+local HEADLINE_SIZE = 22
 local DEFENDERS = Config.Teams.Defenders
 local DISPLAY_NAMES: { [string]: string } = { Tower = "tower", Barracks = "barracks", Core = "core", Nest = "nest" }
 -- How each side is named on banners.
@@ -55,22 +63,22 @@ local screen = Instance.new("ScreenGui")
 screen.Name = "Announcements"
 screen.ResetOnSpawn = false
 screen.DisplayOrder = 10
+screen.IgnoreGuiInset = true -- measured from the very top, like the core strip
 screen.Parent = player:WaitForChild("PlayerGui")
 GameContext.showIn(screen, "Battle") -- battle UI: hidden in the lobby
 
 local banner = UiTheme.panel(screen, nil, UiTheme.RadiusLarge)
 banner.Name = "Banner"
-banner.AnchorPoint = Vector2.new(0.5, 0)
-banner.Position = UDim2.new(0.5, 0, 0, space(16))
-banner.Size = UDim2.fromOffset(0, 0)
-banner.AutomaticSize = Enum.AutomaticSize.XY
+banner.AnchorPoint = Vector2.new(1, 0)
+banner.Size = UDim2.fromOffset(BANNER_MIN_WIDTH, 0)
+banner.AutomaticSize = Enum.AutomaticSize.Y
 banner.Visible = false
 UiTheme.applyScale(banner)
 local pad = Instance.new("UIPadding")
 pad.PaddingTop = UDim.new(0, space(3))
 pad.PaddingBottom = UDim.new(0, space(3))
-pad.PaddingLeft = UDim.new(0, space(6))
-pad.PaddingRight = UDim.new(0, space(6))
+pad.PaddingLeft = UDim.new(0, BANNER_PAD_X)
+pad.PaddingRight = UDim.new(0, BANNER_PAD_X)
 pad.Parent = banner
 local layout = Instance.new("UIListLayout")
 layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -81,14 +89,46 @@ layout.Parent = banner
 local function line(order: number, size: number, weight: Font, strength: number): TextLabel
 	local label = UiTheme.text(banner, size, weight, strength)
 	label.LayoutOrder = order
-	label.Size = UDim2.fromOffset(0, size + 4)
-	label.AutomaticSize = Enum.AutomaticSize.X
+	label.Size = UDim2.new(1, 0, 0, size + 4)
+	label.AutomaticSize = Enum.AutomaticSize.Y
+	label.TextWrapped = true
 	label.TextTruncate = Enum.TextTruncate.None
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	return label
 end
-local headline = line(1, 22, UiTheme.Font.Heavy, UiTheme.Strength.Value)
+local headline = line(1, HEADLINE_SIZE, UiTheme.Font.Heavy, UiTheme.Strength.Value)
 local subline = line(2, UiTheme.TextSize.Body, UiTheme.Font.Medium, UiTheme.Strength.Label)
+
+-- One line's width at 1x, unwrapped (0 if it cannot be measured).
+local function textWidth(text: string, font: Font, size: number): number
+	local params = Instance.new("GetTextBoundsParams")
+	params.Text = text
+	params.Font = font
+	params.Size = size
+	params.Width = math.huge
+	local ok, bounds = pcall(function(): Vector2
+		return TextService:GetTextBoundsAsync(params)
+	end)
+	return if ok then math.ceil(bounds.X) + 4 else 0 -- + the text outline
+end
+
+-- The text width the current banner wants at 1x (measured once per banner).
+local wantedWidth = BANNER_MIN_WIDTH
+
+-- Places the banner left of the core strip and sizes it to its text, capped
+-- at the room left between the party portraits and the strip.
+local function layoutBanner()
+	local camera = Workspace.CurrentCamera
+	local screenWidth = if camera then camera.ViewportSize.X else 0
+	local factor = UiTheme.Scale * UiTheme.screenFactor()
+	local stripLeft = screenWidth / 2 - UiTheme.CoreStripWidth / 2 * factor
+	local partyRight = space(3) + UiTheme.PartyColumnWidth * factor
+	local room = (stripLeft - space(3) - partyRight - space(3)) / factor
+	local width = math.max(math.min(wantedWidth, room), BANNER_MIN_WIDTH)
+	banner.Position = UDim2.new(0.5, -(UiTheme.CoreStripWidth / 2 * factor + space(3)), 0, space(3))
+	banner.Size = UDim2.fromOffset(width, 0)
+end
+UiTheme.onScreenResize(layoutBanner)
 
 local function fadeTo(visible: boolean)
 	local info = TweenInfo.new(FADE_SECONDS, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -115,6 +155,11 @@ local function showNext()
 	showing = true
 	headline.Text = message.headline
 	subline.Text = message.subline
+	wantedWidth = math.max(
+		textWidth(message.headline, UiTheme.Font.Heavy, HEADLINE_SIZE),
+		textWidth(message.subline, UiTheme.Font.Medium, UiTheme.TextSize.Body)
+	) + BANNER_PAD_X * 2
+	layoutBanner()
 	UiTheme.setFill(banner, message.fill or "Navy")
 	banner.BackgroundTransparency = 1
 	headline.TextTransparency = 1

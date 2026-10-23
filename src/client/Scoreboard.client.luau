@@ -154,7 +154,7 @@ GameContext.showIn(screen, "Battle") -- battle UI: hidden in the lobby
 local party = Instance.new("Frame")
 party.Name = "Party"
 party.Position = UDim2.fromOffset(space(3), space(3))
-party.Size = UDim2.fromOffset(PORTRAIT + 8, 0)
+party.Size = UDim2.fromOffset(UiTheme.PartyColumnWidth, 0) -- PORTRAIT + 8
 party.AutomaticSize = Enum.AutomaticSize.Y
 party.BackgroundTransparency = 1
 party.Parent = screen

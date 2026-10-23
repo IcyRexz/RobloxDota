@@ -15,12 +15,15 @@
 --              (Lobby.client). E on a dais with no room open opens it for that
 --              dais; from the menu the server takes the first idle dais.
 --              With nothing to create (already in a room, or every dais
---              busy) it only says to use a dais (E joins and leaves).
+--              busy) it only says what to do (E joins, Exit lobby leaves).
 --              Requests go through LobbyRequest (Match.luau).
 --   Classes    Mage (the only class so far, selected); Archer and Warrior
 --              shown locked until they are built (T18).
 --   Stats      your saved stats (PlayerData.server) and whether they are saved.
 --   Equipment, Upgrades, Shop, Settings: not designed yet (OPEN); each says so.
+-- Bottom middle, while in a room: a red Exit lobby button, the only way out
+-- of a room (owner 2026-10-23: until then the player cannot leave the dais's
+-- circle; Lobby.client and Match.luau hold them there).
 -- Top right: short server messages (LobbyNotice) that fade after a few seconds.
 -- Buttons are large for touch (48+ px at 1x, drawn at UiTheme.Scale).
 -- Updates run only while their panel is open (Play's clock) or on change.
@@ -286,7 +289,7 @@ local function refreshPlay()
 	createView.Visible = canCreate
 	openNote.Visible = not canCreate
 	openNote.Text = if inRoom()
-		then "You are in a lobby. Press E on its stone dais to leave it."
+		then "You are in a lobby. Click Exit lobby to leave it."
 		elseif pad then "A lobby is already open on this dais. Press E to join it."
 		else "Every dais has a lobby open. Press E on one to join it."
 end
@@ -443,6 +446,26 @@ notYet("Equipment", "Weapons and gear for your class will be equipped here. Ther
 notYet("Upgrades", "Permanent upgrades for your heroes will be bought here. None are available yet.")
 notYet("Shop", "Gear will be bought here with the rewards you earn in battle. The shop is not open yet.")
 notYet("Settings", "No settings yet.")
+
+-- Exit lobby (bottom middle, while in a room) ----------------------------------------------
+
+local exitHolder = Instance.new("Frame") -- scales the button; the button's own UIScale is its press effect
+exitHolder.Name = "ExitLobby"
+exitHolder.AnchorPoint = Vector2.new(0.5, 1)
+exitHolder.Position = UDim2.new(0.5, 0, 1, -space(8))
+exitHolder.Size = UDim2.fromOffset(ACTION_WIDTH, ACTION_HEIGHT)
+exitHolder.BackgroundTransparency = 1
+exitHolder.Visible = inRoom()
+exitHolder.Parent = screen
+UiTheme.applyScale(exitHolder)
+local exitButton = MenuKit.button(exitHolder, "Red", "Exit lobby")
+exitButton.Size = UDim2.fromScale(1, 1)
+exitButton.Activated:Connect(function()
+	request("Leave")
+end)
+player:GetAttributeChangedSignal("InRoom"):Connect(function()
+	exitHolder.Visible = inRoom()
+end)
 
 -- Messages (top right) -----------------------------------------------------------------------
 
