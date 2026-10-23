@@ -11,14 +11,17 @@
 --            panel (LobbyMenu.client): the map (Config.Lobby.Maps) and 1 to
 --            MaxBattlePlayers players.
 --   Open     its creator is in it and the countdown (Config.Lobby.
---            CountdownSeconds) runs. Others press E on that dais to join or
---            leave. A full room still waits out the countdown.
+--            CountdownSeconds) runs. Others press E on that dais to join.
+--            A full room still waits out the countdown.
 --   Waiting  the countdown ended while the battlefield was busy (or other
 --            rooms were already waiting): rooms go in the order they started
 --            waiting, one battle at a time (one battlefield per server until
 --            the two-place split).
---   A player is in at most one room (joining another leaves the first). A
---   room everyone leaves closes. When the group goes into the battle the room
+--   A player is in at most one room. Joining or creating one stands them on
+--   its dais, and they stay inside its circle until they click Exit lobby
+--   (owner 2026-10-23; LobbyMenu.client, "Leave" below): Lobby.client keeps
+--   them in smoothly and the server pulls back anyone who still gets out.
+--   A room everyone leaves closes. When the group goes into the battle the room
 --   closes too, so a new one can open on that pad straight away.
 --
 -- The battle (Workspace attribute MatchPhase):
@@ -55,8 +58,8 @@
 -- Remotes:
 --   LobbyRequest (client -> server): ("Create", pad: whole number or nil,
 --     mapId: string, maxPlayers: whole number) from the Create lobby panel;
---     nil pad = the first idle one. Rate limited. Joining and leaving use the
---     daises' prompts.
+--     nil pad = the first idle one. ("Leave") from the Exit lobby button.
+--     Rate limited. Joining uses the daises' prompts.
 --   LobbyNotice (server -> client, text): why a request was refused, shown as
 --     a short message in the lobby (LobbyMenu.client).
 --   ReturnToLobby (client -> server, no arguments): the end screen's button.
@@ -107,6 +110,11 @@ local epoch = 0
 local party: { [Player]: true } = {} -- in the battle
 local returning: { [Player]: true } = {} -- on the loading screen back to the lobby
 local rooms: { Room } = {}
+-- Studs a character's centre keeps inside its dais's edge (Lobby.client
+-- uses the same); the server pulls back anyone LEASH_SLACK beyond the edge.
+local LEASH_INSET = 1
+local LEASH_SLACK = 2
+local LEASH_CHECK_SECONDS = 0.25
 local roomOf: { [Player]: Room } = {}
 local waitCounter = 0
 
@@ -234,6 +242,29 @@ local function setRoomState(room: Room, state: RoomState)
 	room.dais:SetAttribute("RoomState", state)
 end
 
+-- Stands a player's character on a dais: where they are if already inside
+-- its circle, otherwise at the nearest point well inside it, feet on the
+-- stone found by a ray (Lobby.groundAt).
+local function standOnDais(player: Player, dais: BasePart)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not (character and humanoid and root and root:IsA("BasePart")) or humanoid.Health <= 0 then
+		return
+	end
+	local centre = dais.Position
+	local offset = Vector3.new(root.Position.X - centre.X, 0, root.Position.Z - centre.Z)
+	local inner = LobbyConfig.QueueRadius - LEASH_INSET * 2
+	if offset.Magnitude <= LobbyConfig.QueueRadius - LEASH_INSET then
+		return
+	end
+	local spot = centre + (if offset.Magnitude > 0.01 then offset.Unit * inner else Vector3.zero)
+	local ground = Lobby.groundAt(spot.X, spot.Z)
+	local position = Vector3.new(spot.X, ground + humanoid.HipHeight + root.Size.Y / 2, spot.Z)
+	character:PivotTo(CFrame.lookAt(position, Vector3.new(centre.X, position.Y, centre.Z)))
+	root.AssemblyLinearVelocity = Vector3.zero
+end
+
 -- Puts a player into a room (leaving any other), or out of rooms with nil.
 local function setRoom(player: Player, room: Room?)
 	local old = roomOf[player]
@@ -246,6 +277,7 @@ local function setRoom(player: Player, room: Room?)
 		room.dais:SetAttribute("RoomSize", count(room.members))
 		roomOf[player] = room
 		player:SetAttribute("InRoom", room.pad)
+		standOnDais(player, room.dais)
 	else
 		roomOf[player] = nil
 		player:SetAttribute("InRoom", nil)
@@ -496,7 +528,7 @@ function Match.createLobby(player: Player, pad: number?, mapId: string, maxPlaye
 		return
 	end
 	if roomOf[player] then
-		notify(player, "You are already in a lobby: press E on its dais to leave it")
+		notify(player, "You are already in a lobby: click Exit lobby to leave it")
 		return
 	end
 	if not isMapId(mapId) or maxPlayers % 1 ~= 0 or maxPlayers < 1 or maxPlayers > LobbyConfig.MaxBattlePlayers then
@@ -528,7 +560,7 @@ function Match.createLobby(player: Player, pad: number?, mapId: string, maxPlaye
 	print(`[Match] {player.Name} opened a lobby on pad {room.pad}: {mapId}, {maxPlayers} player(s)`)
 end
 
--- E on a dais with a room open: join it (leaving any other room) or leave it.
+-- E on a dais with a room open: join it (leaving any other room).
 -- With none open there the client shows the Create lobby panel instead
 -- (LobbyMenu.client); nothing here.
 function Match.toggleRoom(player: Player, pad: number)
@@ -538,9 +570,7 @@ function Match.toggleRoom(player: Player, pad: number)
 	end
 	local old = roomOf[player]
 	if old == room then
-		setRoom(player, nil)
-		closeIfEmpty(room)
-		return
+		return -- leaving is the Exit lobby button (Match.leaveRoom)
 	end
 	if count(room.members) >= roomMaxPlayers(room) then
 		notify(player, "This lobby is full")
@@ -551,6 +581,35 @@ function Match.toggleRoom(player: Player, pad: number)
 		closeIfEmpty(old)
 	end
 end
+
+-- The Exit lobby button: out of their room, free to walk again.
+function Match.leaveRoom(player: Player)
+	local room = roomOf[player]
+	if not room or not inLobby(player) then
+		return
+	end
+	setRoom(player, nil)
+	closeIfEmpty(room)
+end
+
+-- The server's side of the leash: anyone in a room found beyond its dais's
+-- edge (a lagging or modified client, a respawn in the courtyard) is put
+-- back on the dais.
+task.spawn(function()
+	while true do
+		task.wait(LEASH_CHECK_SECONDS)
+		for player, room in roomOf do
+			local character = player.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if root and root:IsA("BasePart") then
+				local offset = Vector3.new(root.Position.X - room.dais.Position.X, 0, root.Position.Z - room.dais.Position.Z)
+				if offset.Magnitude > LobbyConfig.QueueRadius + LEASH_SLACK then
+					standOnDais(player, room.dais)
+				end
+			end
+		end
+	end
+end)
 
 for _, pad in Lobby.Pads do
 	pad.prompt.Triggered:Connect(function(player: Player)
@@ -568,6 +627,10 @@ requestEvent.OnServerEvent:Connect(function(player: Player, action: unknown, pad
 		return
 	end
 	lastRequestAt[player] = now
+	if action == "Leave" then
+		Match.leaveRoom(player)
+		return
+	end
 	if action ~= "Create" or type(mapId) ~= "string" or #mapId > MAX_MAP_ID or type(maxPlayers) ~= "number" or maxPlayers ~= maxPlayers then
 		return
 	end

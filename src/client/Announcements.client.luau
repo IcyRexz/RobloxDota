@@ -1,7 +1,9 @@
 --!strict
--- Announcement banner near the top of the screen, in the game's UI design
--- system (docs/11_UI_DESIGN.md): a surface pill with a white headline and a
--- dimmer subline, e.g.
+-- Announcement banner on the left of the screen, beside the party portraits
+-- (Scoreboard.client) and below the core strip and target panel (owner
+-- 2026-10-23: it covered the target panel at the top middle), in the game's
+-- UI design system (docs/11_UI_DESIGN.md): a fixed-width block with a white
+-- headline and a dimmer subline, left-aligned and wrapped, e.g.
 --   Zombies lost a core
 --   Enemy core destroyed
 -- No team colours. Banners queue, so two quick events show one after another.
@@ -31,6 +33,8 @@ local FADE_SECONDS = 0.25
 local POPUP_SECONDS = 4
 local POPUP_MAX = 4 -- older popups are dropped beyond this
 local POPUP_DOT = 10
+local BANNER_WIDTH = 320 -- at 1x; long lines wrap
+local BANNER_TOP = 0.3 -- share of the screen height: clear of the core strip and target panel
 local DEFENDERS = Config.Teams.Defenders
 local DISPLAY_NAMES: { [string]: string } = { Tower = "tower", Barracks = "barracks", Core = "core", Nest = "nest" }
 -- How each side is named on banners.
@@ -60,10 +64,13 @@ GameContext.showIn(screen, "Battle") -- battle UI: hidden in the lobby
 
 local banner = UiTheme.panel(screen, nil, UiTheme.RadiusLarge)
 banner.Name = "Banner"
-banner.AnchorPoint = Vector2.new(0.5, 0)
-banner.Position = UDim2.new(0.5, 0, 0, space(16))
-banner.Size = UDim2.fromOffset(0, 0)
-banner.AutomaticSize = Enum.AutomaticSize.XY
+-- Just right of the party portraits (which start space(3) from the left edge).
+UiTheme.onScreenResize(function()
+	local partyRight = space(3) + UiTheme.PartyColumnWidth * UiTheme.Scale * UiTheme.screenFactor()
+	banner.Position = UDim2.new(0, partyRight + space(3), BANNER_TOP, 0)
+end)
+banner.Size = UDim2.fromOffset(BANNER_WIDTH, 0)
+banner.AutomaticSize = Enum.AutomaticSize.Y
 banner.Visible = false
 UiTheme.applyScale(banner)
 local pad = Instance.new("UIPadding")
@@ -73,7 +80,7 @@ pad.PaddingLeft = UDim.new(0, space(6))
 pad.PaddingRight = UDim.new(0, space(6))
 pad.Parent = banner
 local layout = Instance.new("UIListLayout")
-layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 layout.Padding = UDim.new(0, 2)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = banner
@@ -81,10 +88,11 @@ layout.Parent = banner
 local function line(order: number, size: number, weight: Font, strength: number): TextLabel
 	local label = UiTheme.text(banner, size, weight, strength)
 	label.LayoutOrder = order
-	label.Size = UDim2.fromOffset(0, size + 4)
-	label.AutomaticSize = Enum.AutomaticSize.X
+	label.Size = UDim2.new(1, 0, 0, size + 4)
+	label.AutomaticSize = Enum.AutomaticSize.Y
+	label.TextWrapped = true
 	label.TextTruncate = Enum.TextTruncate.None
-	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.TextXAlignment = Enum.TextXAlignment.Left
 	return label
 end
 local headline = line(1, 22, UiTheme.Font.Heavy, UiTheme.Strength.Value)

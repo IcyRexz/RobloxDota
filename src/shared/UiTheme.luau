@@ -115,6 +115,9 @@ UiTheme.ReferenceHeight = 900
 -- Height (at 1x) of the core health strip at the top centre (CoreStrip.client),
 -- so the target panel can sit just below it.
 UiTheme.CoreStripHeight = 34
+-- Width (at 1x) of the party portraits down the top left (Scoreboard.client),
+-- so the announcement banner can sit just right of them.
+UiTheme.PartyColumnWidth = 52
 UiTheme.MinScreenFactor = 0.6
 UiTheme.MaxScreenFactor = 1.6
 
