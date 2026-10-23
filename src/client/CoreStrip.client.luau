@@ -20,7 +20,7 @@ local Size = UiTheme.TextSize
 local space = UiTheme.space
 
 -- Smaller (owner 2026-10-23; was 330 wide with 14 px bars).
-local WIDTH = 250
+local WIDTH = UiTheme.CoreStripWidth
 local BAR_HEIGHT = 12
 local LABEL_HEIGHT = 12
 local VS_WIDTH = space(6)

@@ -112,8 +112,9 @@ UiTheme.MenuScale = 1.5 -- full menus (still shrunk to fit small screens)
 -- ReferenceHeight pixels tall; on other windows everything grows or shrinks
 -- with the window's height, between MinScreenFactor and MaxScreenFactor.
 UiTheme.ReferenceHeight = 900
--- Height (at 1x) of the core health strip at the top centre (CoreStrip.client),
--- so the target panel can sit just below it.
+-- Size (at 1x) of the core health strip at the top centre (CoreStrip.client),
+-- so the target panel can sit just below it and the banner just left of it.
+UiTheme.CoreStripWidth = 250
 UiTheme.CoreStripHeight = 34
 -- Width (at 1x) of the party portraits down the top left (Scoreboard.client),
 -- so the announcement banner can sit just right of them.
