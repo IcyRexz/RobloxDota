@@ -3,8 +3,8 @@
 -- top level with the strip's, growing leftward toward the party portraits
 -- (owner 2026-10-23: at the top middle it covered the target panel; option A
 -- of five). In the game's UI design system (docs/11_UI_DESIGN.md): a block
--- with a white headline and a dimmer subline, right-aligned (toward the
--- strip). It is as wide as its text, but never wider than the gap between
+-- with a white headline and a dimmer subline, centred in it (owner
+-- 2026-10-23). It is as wide as its text, but never wider than the gap between
 -- the portraits and the strip: longer lines wrap. E.g.
 --   Zombies lost a core
 --   Enemy core destroyed
@@ -81,7 +81,7 @@ pad.PaddingLeft = UDim.new(0, BANNER_PAD_X)
 pad.PaddingRight = UDim.new(0, BANNER_PAD_X)
 pad.Parent = banner
 local layout = Instance.new("UIListLayout")
-layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 layout.Padding = UDim.new(0, 2)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = banner
@@ -93,7 +93,7 @@ local function line(order: number, size: number, weight: Font, strength: number)
 	label.AutomaticSize = Enum.AutomaticSize.Y
 	label.TextWrapped = true
 	label.TextTruncate = Enum.TextTruncate.None
-	label.TextXAlignment = Enum.TextXAlignment.Right
+	label.TextXAlignment = Enum.TextXAlignment.Center
 	return label
 end
 local headline = line(1, HEADLINE_SIZE, UiTheme.Font.Heavy, UiTheme.Strength.Value)
