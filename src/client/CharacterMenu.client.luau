@@ -25,6 +25,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local MageAbilities = require(ReplicatedStorage.Shared.MageAbilities)
 local MenuKit = require(ReplicatedStorage.Shared.MenuKit)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
@@ -412,8 +413,15 @@ player.AttributeChanged:Connect(function()
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if not gameProcessed and input.KeyCode == Enum.KeyCode.U then
+	if not gameProcessed and input.KeyCode == Enum.KeyCode.U and GameContext.is("Battle") then
 		setOpen(not menu.screen.Enabled)
+	end
+end)
+
+-- Battle only: closes when you go back to the lobby.
+GameContext.during("Battle", function()
+	return function()
+		setOpen(false)
 	end
 end)
 

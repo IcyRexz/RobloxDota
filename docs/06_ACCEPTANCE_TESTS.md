@@ -9,7 +9,7 @@ Build/sync into a fresh place; start a server with two clients. No script errors
 Players spawn inside the compound, reach every build node and cannot leave the map, jump over fences or onto the core, or spawn inside geometry. Enemies always have a path to the core. Incoming waves are visible in first person and on the minimap.
 
 ## A03 — Hub and mission flow (P0)
-Solo and party (2 and 5 players) can start from the hub. Leaving during Briefing cancels it. Leaving mid-mission keeps the others playing; last player leaving resets. Results return everyone to the hub. Three missions in a row start clean (no leftover Gold, pieces, enemies or cooldowns).
+Solo and party (2 and 5 players) can start from the lobby (queue dais, E to join; war horn, hold F to start a 10 s countdown). An empty party cancels the countdown. Players outside the party, or joining mid-fight, stay in the lobby and cannot join the running fight. Leaving mid-mission keeps the others playing; last player leaving resets. Results return everyone to the hub. Three missions in a row start clean (no leftover Gold, pieces, enemies or cooldowns).
 
 ## A04 — Heroes and attacks (P0)
 Each hero's attack and abilities work while moving. Holding attack never exceeds the attack rate; no doubled or stuck shots; focus loss and death stop held fire.
@@ -17,8 +17,8 @@ Each hero's attack and abilities work while moving. Holding attack never exceeds
 ## A05 — Death and respawn (P0)
 Dead players cannot fire, build or repair. Respawn/revive follows the GDD; repeated deaths restore controls exactly once.
 
-## A06 — Waves, structures and results (P0)
-Waves spawn as configured and attack players, built pieces and the core. Walls block, towers fire, traps trigger, destroyed pieces free their node. Core destruction loses; clearing the final wave (boss when present) wins. Damage arriving after the result cannot change it.
+## A06 — Spawning, structures and results (P0)
+Zombies spawn as configured (tug of war, owner 2026-10-21) and attack players, buildings and the Base Core. Towers fire. Our Base Core destroyed = loss; the Zombie Core destroyed = win (owner 2026-10-21). The result is decided once; damage arriving after it (arrows, acid, swings already under way) cannot change it, and nothing spawns or moves after it until reset (T15).
 
 ## A07 — Remote and combat authority (P0)
 With a Studio-only test client, send wrong types, extra keys, NaN/infinite/huge numbers, unknown actions, stale epoch, and 100 requests/s for 10 s. Fire while dead, outside a mission, on cooldown, at targets out of range/behind walls. Expected: no exception, no unauthorized damage, no unbounded replies or logs.

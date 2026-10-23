@@ -22,6 +22,7 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local Font = UiTheme.Font
@@ -147,7 +148,10 @@ local function updateCamera(_deltaTime: number)
 	if not focus then
 		return
 	end
-	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+	-- Mouse look, except once the match is over (the end screen frees the mouse).
+	if Workspace:GetAttribute("MatchResult") == nil then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+	end
 	local delta = UserInputService:GetMouseDelta()
 	yaw -= delta.X * ORBIT_SENSITIVITY
 	pitch = math.clamp(pitch - delta.Y * ORBIT_SENSITIVITY, ORBIT_PITCH_MIN, ORBIT_PITCH_MAX)
@@ -227,7 +231,7 @@ local function readNumber(instance: Instance, name: string): number?
 	return if type(value) == "number" then value else nil
 end
 
-RunService.RenderStepped:Connect(function()
+local function step()
 	local character = player.Character
 	local health = character and readNumber(character, "Health")
 	local downedAt = character and readNumber(character, "DownedAt")
@@ -252,5 +256,14 @@ RunService.RenderStepped:Connect(function()
 	if type(reviver) == "string" and startedAt then
 		reviverText.Text = `{reviver} is reviving you`
 		reviveBar.fill.Size = UDim2.fromScale(math.clamp((now - startedAt) / Death.ReviveHold, 0, 1), 1)
+	end
+end
+
+-- Battle only: back in the lobby nobody is down (a fresh character there).
+GameContext.during("Battle", function()
+	local connection = RunService.RenderStepped:Connect(step)
+	return function()
+		connection:Disconnect()
+		setDown(false, player.Character)
 	end
 end)

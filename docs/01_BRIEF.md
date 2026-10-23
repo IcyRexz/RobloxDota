@@ -17,11 +17,11 @@ The players and their side are fantasy warriors and heroes (swords, bows, magic 
 - **Credits:** persistent, earned per mission; spent in the hub on gear (and possibly heroes; OPEN).
 
 ## Platform and launch order (owner decisions 2026-10-20)
-- **PC (computer) launch first.** Desktop mouse and keyboard is the primary input. Mobile/touch is a later port and is not a launch blocker until the owner schedules it.
-- **Hub and mission arena live in one place** (one server holds the hub and the mission). Separate places with teleports may come later.
+- **PC (computer) launch first.** Desktop mouse and keyboard is the primary input. Mobile/touch is a later port and is not a launch blocker until the owner schedules it. Owner 2026-10-23: new lobby UI is built **touch-ready** (large buttons, scale from screen size, no hover-only information) so the port is easy; battle touch controls stay in T26.
+- **Hub and mission arena live in one place for now** (one server holds the hub and the mission). Owner 2026-10-23: **staged move to two places** — lobby UI separation, navigation, party and queue are built in the one place first, then the game splits into a lobby place and a battle place (one reserved server per match) with teleports (`docs/15_LOBBY_MATCHMAKING_PLAN.md`).
 - **No schedule.** The 7-day target and 14-day cap are dropped. The owner chooses the next change one at a time.
 - **Animations later.** A custom animation set is deferred; the owner will decide what is needed afterwards.
-- **Camera:** first person with a centre crosshair (owner decision 2026-10-20, replacing the fixed elevated follow camera); a fixed-orientation minimap shows the base at the bottom and enemies arriving from the top.
+- **Camera:** in battle, first person with a centre crosshair (owner decision 2026-10-20, replacing the fixed elevated follow camera); in the lobby, Roblox's default third-person camera with a free mouse (owner 2026-10-23); a fixed-orientation minimap shows the base at the bottom and enemies arriving from the top.
 
 ## Required for the complete launch
 - One public Roblox experience and working start link.
@@ -37,6 +37,7 @@ The players and their side are fantasy warriors and heroes (swords, bows, magic 
 
 ## Not in scope unless the owner adds it
 PvP, paid products/monetization, trading, external HTTP/telemetry, cross-server matchmaking services, free-text chat features beyond Roblox defaults, a level editor.
+Possible later Robux points are parked in `docs/14_MONETIZATION_IDEAS.md` (owner 2026-10-23); they stay out of scope until the owner adds them.
 
 ## Definition of done
 Players on non-editor accounts join the public experience, pick a hero in the hub, play a full mission with 1–5 players to a win or loss, get their rewards, leave and rejoin with progression intact, and every P0 check in `docs/06_ACCEPTANCE_TESTS.md` passes. The README holds the verified URL, controls, goal, decisions, credits, limitations and tested devices.

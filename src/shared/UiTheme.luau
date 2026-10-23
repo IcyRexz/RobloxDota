@@ -50,14 +50,14 @@ UiTheme.Ink = Color3.fromRGB(29, 43, 79)
 export type FillName = "Navy" | "Blue" | "Deep" | "Sky" | "Gold" | "Green" | "Red" | "Light" | "Grey"
 local FILLS: { [string]: { Color3 } } = {
 	Navy = { Color3.fromRGB(50, 68, 120), Color3.fromRGB(29, 43, 79) }, -- HUD pieces, profile
-	Blue = { Color3.fromRGB(99, 214, 255), Color3.fromRGB(42, 145, 236) }, -- menu body, cards, slots
+	Blue = { Color3.fromRGB(64, 160, 224), Color3.fromRGB(30, 104, 192) }, -- menu body, cards, slots (owner 2026-10-23: darker; was 99,214,255 / 42,145,236)
 	Deep = { Color3.fromRGB(78, 124, 214), Color3.fromRGB(44, 78, 162) }, -- ability slots (owner 2026-10-22: Blue too bright)
-	Sky = { Color3.fromRGB(169, 240, 255), Color3.fromRGB(92, 200, 247) }, -- the panel behind a grid
+	Sky = { Color3.fromRGB(70, 126, 186), Color3.fromRGB(42, 86, 150) }, -- the panel behind a grid (owner 2026-10-23: darkened twice, now an inset below the body; first 169,240,255 / 92,200,247)
 	Gold = { Color3.fromRGB(255, 240, 122), Color3.fromRGB(255, 186, 26) }, -- selected, rim, pick
 	Green = { Color3.fromRGB(166, 240, 74), Color3.fromRGB(70, 186, 24) }, -- owned, taken, buy
 	Red = { Color3.fromRGB(255, 122, 77), Color3.fromRGB(226, 48, 28) }, -- close, warnings
-	Light = { Color3.fromRGB(232, 251, 255), Color3.fromRGB(176, 232, 252) }, -- stat rows, tiles, info
-	Grey = { Color3.fromRGB(205, 206, 218), Color3.fromRGB(140, 145, 166) }, -- locked, cannot afford
+	Light = { Color3.fromRGB(200, 226, 244), Color3.fromRGB(148, 196, 232) }, -- stat rows, tiles, info (owner 2026-10-23: darker; was 232,251,255 / 176,232,252)
+	Grey = { Color3.fromRGB(166, 170, 190), Color3.fromRGB(110, 115, 140) }, -- locked, cannot afford (owner 2026-10-23: darker; was 205,206,218 / 140,145,166)
 }
 UiTheme.Fill = table.freeze(FILLS)
 UiTheme.Outline = 3 -- menu blocks
@@ -112,6 +112,9 @@ UiTheme.MenuScale = 1.5 -- full menus (still shrunk to fit small screens)
 -- ReferenceHeight pixels tall; on other windows everything grows or shrinks
 -- with the window's height, between MinScreenFactor and MaxScreenFactor.
 UiTheme.ReferenceHeight = 900
+-- Height (at 1x) of the core health strip at the top centre (CoreStrip.client),
+-- so the target panel can sit just below it.
+UiTheme.CoreStripHeight = 34
 UiTheme.MinScreenFactor = 0.6
 UiTheme.MaxScreenFactor = 1.6
 
@@ -281,7 +284,13 @@ end
 local PRESS_TWEEN = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 UiTheme.HoverScale = 1.06
 UiTheme.PressScale = 0.93
-function UiTheme.pressable(button: GuiButton)
+-- Full-width cards grow less (owner 2026-10-23: the class cards grew past the
+-- window's edge on hover).
+UiTheme.WideHoverScale = 1.02
+UiTheme.WidePressScale = 0.98
+function UiTheme.pressable(button: GuiButton, wide: boolean?)
+	local hoverScale = if wide then UiTheme.WideHoverScale else UiTheme.HoverScale
+	local pressScale = if wide then UiTheme.WidePressScale else UiTheme.PressScale
 	local scale = Instance.new("UIScale")
 	scale.Name = "Press"
 	scale.Parent = button
@@ -291,17 +300,17 @@ function UiTheme.pressable(button: GuiButton)
 	end
 	button.MouseEnter:Connect(function()
 		over = true
-		to(UiTheme.HoverScale)
+		to(hoverScale)
 	end)
 	button.MouseLeave:Connect(function()
 		over = false
 		to(1)
 	end)
 	button.MouseButton1Down:Connect(function()
-		to(UiTheme.PressScale)
+		to(pressScale)
 	end)
 	button.MouseButton1Up:Connect(function()
-		to(if over then UiTheme.HoverScale else 1)
+		to(if over then hoverScale else 1)
 	end)
 	-- A hidden button forgets its hover (it may reappear under a still mouse).
 	button:GetPropertyChangedSignal("Visible"):Connect(function()

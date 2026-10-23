@@ -11,8 +11,8 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local LINE_LENGTH = 8
@@ -24,8 +24,6 @@ local ENEMY_COLOR = UiTheme.Enemy
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-
-UserInputService.MouseIconEnabled = false
 
 local screen = Instance.new("ScreenGui")
 screen.Name = "Crosshair"
@@ -77,7 +75,11 @@ end
 refresh()
 player:GetAttributeChangedSignal("AimTarget"):Connect(refresh)
 
--- Hidden while your hero is down (DeathScreen.client sets this device's "Down").
-player:GetAttributeChangedSignal("Down"):Connect(function()
-	screen.Enabled = player:GetAttribute("Down") ~= true
-end)
+-- Battle only, and hidden while your hero is down (DeathScreen.client sets
+-- this device's "Down"). The mouse icon is hidden by ContextCamera.client.
+local function updateShown()
+	screen.Enabled = GameContext.is("Battle") and player:GetAttribute("Down") ~= true
+end
+updateShown()
+player:GetAttributeChangedSignal("Down"):Connect(updateShown)
+GameContext.changed:Connect(updateShown)

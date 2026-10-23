@@ -37,6 +37,7 @@ local Workspace = game:GetService("Workspace")
 
 local BaseUpgradeRules = require(ReplicatedStorage.Shared.BaseUpgradeRules)
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local MenuKit = require(ReplicatedStorage.Shared.MenuKit)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
@@ -444,6 +445,13 @@ end
 
 menu.closeButton.Activated:Connect(function()
 	setOpen(false)
+end)
+
+-- Battle only: closes when you go back to the lobby.
+GameContext.during("Battle", function()
+	return function()
+		setOpen(false)
+	end
 end)
 
 ReplicatedStorage.AttributeChanged:Connect(function()

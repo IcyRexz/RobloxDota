@@ -14,16 +14,17 @@
 --    match; Strengthened tells Minions.server to restat living zombies.
 --  * Zombie Ambush: AmbushRequested asks Minions.server for plain zombies in
 --    groups of random size at random spots across the battlefield.
---  * Arrivals (owner 2026-10-23, Config.Events.Arrivals): one-time, at fixed
---    times. Brutes and Spitters only join the zombie groups once theirs has
---    happened (hasArrived); each is announced once with a banner.
--- A ModuleScript: the match clock starts when first required (Minions
--- requires it at server start; there is no lobby yet, T05).
+--  * Arrivals (owner 2026-10-23, Config.Events.Arrivals): one-time. Each
+--    variant gets one of Config.Events.ArrivalTimes, shuffled every match, and
+--    only joins the zombie groups once its arrival has happened (hasArrived);
+--    each is announced once with a banner.
+-- A ModuleScript. Its clock starts with each fight (Match.Started) and only
+-- runs while fighting; the battlefield reset (T15) clears everything.
 --
 -- Remote: ZombieEvent (server -> all clients): (event id: string, phase:
 --   "Start" | "End"), so clients can show the banner. Display only.
 -- Workspace attributes for the clients' timers (server time,
--- Workspace:GetServerTimeNow()): MatchStartedAt, and Event<id>EndsAt while a
+-- Workspace:GetServerTimeNow()): Event<id>EndsAt while a
 -- timed event runs (removed when it ends).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -31,6 +32,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Landscape = require(script.Parent.Landscape)
+local Match = require(script.Parent.Match)
 local SwarmField = require(script.Parent.SwarmField)
 
 local EventConfig = Config.Events
@@ -68,7 +70,27 @@ local permanentStrength = 0 -- Zombies Evolve, summed (0.25 = +25%)
 local startedAt = os.clock()
 local nextAt = startedAt + EventConfig.FirstAt
 local arrived: { [string]: boolean } = {} -- variant kind -> joined the horde
-Workspace:SetAttribute("MatchStartedAt", Workspace:GetServerTimeNow())
+-- Variant kind -> seconds after the start when it arrives: the arrival times
+-- dealt out in a random order.
+local arrivalAt: { [string]: number } = {}
+
+-- A fight starts (Match.Started, T05): the event clock and the arrivals start
+-- now, with the arrival times dealt out afresh.
+local function startClock()
+	startedAt = os.clock()
+	nextAt = startedAt + EventConfig.FirstAt
+	table.clear(arrived)
+	local times = table.clone(EventConfig.ArrivalTimes)
+	for index = #times, 2, -1 do
+		local other = math.random(1, index)
+		times[index], times[other] = times[other], times[index]
+	end
+	for index, arrival in EventConfig.Arrivals do
+		arrivalAt[arrival.kind] = times[index] or times[#times]
+	end
+end
+startClock()
+Match.Started:Connect(startClock)
 
 -- Whether a zombie variant (MinionStats kind) may appear yet. Plain zombies
 -- and kinds without an arrival always may.
@@ -256,12 +278,29 @@ function ZombieEvents.trigger(id: string): boolean
 	return false
 end
 
+-- The battlefield reset (T15): no event running or remembered, zombies at
+-- their base strength, the clock and arrivals dealt afresh. (Nests are
+-- removed by Structures.server's reset step.)
+Match.onReset(40, "ZombieEvents", function()
+	for _, info in EventConfig.List do
+		runToken[info.id] = (runToken[info.id] or 0) + 1 -- a running timer's end is ignored
+		Workspace:SetAttribute(`Event{info.id}EndsAt`, nil)
+	end
+	table.clear(activeUntil)
+	lastId = nil
+	permanentStrength = 0
+	startClock()
+end)
+
 task.spawn(function()
 	while true do
 		task.wait(1)
+		if not Match.isFighting() then
+			continue -- events and arrivals only during a fight (T05/T10)
+		end
 		local now = os.clock()
 		for _, arrival in EventConfig.Arrivals do
-			if now - startedAt >= arrival.at then
+			if now - startedAt >= arrivalAt[arrival.kind] then
 				arrive(arrival)
 			end
 		end

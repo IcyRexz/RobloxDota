@@ -2,7 +2,7 @@
 -- In-match XP, levels and masteries for each player (owner 2026-10-20 /
 -- 2026-10-21; numbers in Config.Hero).
 --  * Every zombie that dies (killed by anyone: players, minions, towers) gives
---    every player XpPerDeath for its kind. Each level needs a little more XP
+--    every player in the battle XpPerDeath for its kind. Each level needs a little more XP
 --    than the last (FirstLevelXp, XpGrowth). Levels stop at MaxLevel (25).
 --  * Each level-up raises max health and damage by Config.Hero.Growth (no
 --    choices); the hero heals by the max health gained.
@@ -14,8 +14,9 @@
 --    soldiers' damage, while the player is in the match), and the War Drums /
 --    Fortify masteries (our soldiers' attack speed / health) go to
 --    BaseUpgrades.setArmy. Each counts once, however many players have it.
--- Progress lives on the server and is kept for the session (dying does not
--- reset it); saved progression is a separate, later task (T20).
+-- Progress lives on the server and is kept for the battle (dying does not
+-- reset it); the battlefield reset (T15, Match.onReset) puts everyone back to
+-- level 1. Saved progression is a separate, later task (T20).
 -- Player attributes for the HUD and Character Menu (display only, server-written):
 --   Level, Xp, XpToNext (0 at max level), MasteryPoints (picks waiting),
 --   Mastery<id> (true once taken),
@@ -35,6 +36,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BaseUpgrades = require(script.Parent.BaseUpgrades)
 local CombatService = require(script.Parent.CombatService)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Match = require(script.Parent.Match)
 local MageAbilities = require(ReplicatedStorage.Shared.MageAbilities)
 
 local HeroConfig = Config.Hero
@@ -191,10 +193,11 @@ function HeroProgress.addXp(player: Player, amount: number)
 	applyStats(player, HeroProgress.maxHealth(player) - oldMaxHealth)
 end
 
--- The buff all players together give our soldiers (each kind counts once).
+-- The buff the players in the battle together give our soldiers (each kind
+-- counts once).
 local function refreshArmy()
 	local army = { health = 0, damage = 0, attackSpeed = 0 }
-	for player in progressOf do
+	for _, player in Match.partyMembers() do
 		army.damage = HeroConfig.BaseBuff.Damage -- Storm Banner: any Mage in the match
 		if HeroProgress.hasMastery(player, "WarDrums") then
 			army.attackSpeed = Bonus.WarDrums
@@ -206,14 +209,15 @@ local function refreshArmy()
 	BaseUpgrades.setArmy(army)
 end
 
--- Shared XP: any zombie death gives every player XP.
+-- Shared XP: any zombie death gives every player in the battle XP (not those
+-- waiting in the lobby).
 CombatService.Died:Connect(function(target: Instance)
 	if target:GetAttribute("Kind") ~= "Minion" or target:GetAttribute("Team") ~= Config.Teams.Zombies then
 		return
 	end
 	local kind = target:GetAttribute("MinionType")
 	local xp = (if type(kind) == "string" then Leveling.XpPerDeath[kind] else nil) or Leveling.XpPerDeath.Zombie
-	for _, player in Players:GetPlayers() do
+	for _, player in Match.partyMembers() do
 		HeroProgress.addXp(player, xp)
 	end
 end)
@@ -257,6 +261,18 @@ for _, player in Players:GetPlayers() do
 end
 Players.PlayerRemoving:Connect(function(player)
 	progressOf[player] = nil
+	refreshArmy()
+end)
+
+-- The army buffs follow who is in the battle once it starts.
+Match.Started:Connect(refreshArmy)
+
+-- The battlefield reset (T15): everyone back to level 1 with no masteries.
+Match.onReset(50, "HeroProgress", function()
+	for _, player in Players:GetPlayers() do
+		progressOf[player] = nil
+		getProgress(player)
+	end
 	refreshArmy()
 end)
 

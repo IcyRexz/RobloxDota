@@ -121,8 +121,10 @@ end
 
 -- Every structure in the map, read once the game has fully loaded (the arena
 -- also holds hundreds of trees, rocks and fence parts, so it is not re-scanned
--- on every call). Destroyed structures are removed from the map and dropped here.
+-- on every call). Destroyed structures are removed from the map and dropped
+-- here; structures added later make it read the map again.
 local structureCache: { Instance }? = nil
+local cacheWatch: RBXScriptConnection? = nil
 local function standingStructures(): { Instance }
 	if not structureCache then
 		local arena = Workspace:FindFirstChild("Arena")
@@ -139,6 +141,15 @@ local function standingStructures(): { Instance }
 			return found -- parts may still be arriving: do not keep this list yet
 		end
 		structureCache = found
+		-- A structure added later (a zombie nest, or one put back by the
+		-- battlefield reset, T15) means the list is read again next time.
+		if not cacheWatch then
+			cacheWatch = arena.DescendantAdded:Connect(function(item: Instance)
+				if item:IsA("BasePart") and Targeting.StructureKinds[item:GetAttribute("Kind")] then
+					structureCache = nil
+				end
+			end)
+		end
 	end
 	local cache = structureCache :: { Instance }
 	for i = #cache, 1, -1 do

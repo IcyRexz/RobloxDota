@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 local FloatingText = require(ReplicatedStorage.Shared.FloatingText)
 
@@ -25,6 +26,7 @@ screen.Name = "GoldCounter"
 screen.ResetOnSpawn = false
 screen.IgnoreGuiInset = true -- flush to the window's top-right corner (owner 2026-10-21)
 screen.Parent = player:WaitForChild("PlayerGui")
+GameContext.showIn(screen, "Battle") -- battle UI: hidden in the lobby
 
 local panel = UiTheme.panel(screen)
 panel.Name = "Panel"

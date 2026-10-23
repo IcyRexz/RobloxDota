@@ -21,8 +21,8 @@
 --    hold starts and again when it completes, and times the hold itself. While
 --    someone holds, the body carries ReviverName / ReviveStartedAt. A revive
 --    stands the hero up where it fell with a share of its max health. Each
---    player can be revived once per match (player attribute ReviveUsed; reset
---    with the match later, T15). Clients are told "Revived".
+--    player can be revived once per match (player attribute ReviveUsed;
+--    cleared by the battlefield reset, T15). Clients are told "Revived".
 --  * Otherwise, when the countdown ends, the player respawns at the pad with
 --    full health (CharacterAutoLoads is off; this script loads characters).
 --  * Coming back either way sets ProtectedUntil: CombatService refuses damage
@@ -41,6 +41,7 @@ local Workspace = game:GetService("Workspace")
 local CombatService = require(script.Parent.CombatService)
 local Config = require(ReplicatedStorage.Shared.Config)
 local HeroProgress = require(script.Parent.HeroProgress)
+local Match = require(script.Parent.Match)
 
 local HeroConfig = Config.Hero
 local Death = HeroConfig.Death
@@ -148,7 +149,7 @@ end
 
 -- Can this player revive this downed hero right now?
 local function canRevive(reviver: Player, character: Model, state: Downed): boolean
-	if reviver == state.player or downedOf[character] ~= state or state.player:GetAttribute("ReviveUsed") == true then
+	if reviver == state.player or downedOf[character] ~= state or state.player:GetAttribute("ReviveUsed") == true or Match.isOver() then
 		return false
 	end
 	local body = reviver.Character
@@ -328,6 +329,9 @@ local function setupHero(player: Player, character: Model)
 	humanoid.MaxHealth = maxHealth
 	humanoid.Health = maxHealth
 	humanoid.WalkSpeed = HeroProgress.walkSpeed(player)
+	if Match.isOver() and Match.inParty(player) then
+		Match.freezeHero(character) -- a respawn in the frozen battle stays still (T10)
+	end
 	-- Our own overhead bar replaces Roblox's name and health display.
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
@@ -387,6 +391,13 @@ local function regenerate(elapsed: number)
 		end
 	end
 end
+
+-- The battlefield reset (T15): everyone may be revived once again.
+Match.onReset(50, "Heroes", function()
+	for _, player in Players:GetPlayers() do
+		player:SetAttribute("ReviveUsed", nil)
+	end
+end)
 
 task.spawn(function()
 	while true do

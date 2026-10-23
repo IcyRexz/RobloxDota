@@ -1,97 +1,116 @@
 # Open issues review (living document)
 
-Rechecked against the code on 2026-10-22 (after the tug-of-war redesign, zombie variants, battlefield events and the dev panel). Replaces the chat review of 2026-10-21. Numbers are from `src/shared/Config.luau` unless a file is named. Nothing here has Studio evidence yet: `docs/STUDIO_TEST_PASS.md` is still NOT RUN, and parts of it (waves, two zombie cores) are now out of date.
+Rechecked against the code on 2026-10-23 (third pass; earlier passes 2026-10-21 in chat and 2026-10-22). Covers commits up to `5ad1222` plus the uncommitted win/loss, core strip, score screen and Ripper work. Numbers are from `src/shared/Config.luau` unless a file is named. Static checks on 2026-10-23: luau-lsp 0 errors, selene 0/0, scratch `rojo build` OK (about 13,200 lines of Luau).
 
-Status key: **OPEN** (not started), **PARTLY** (some of it built), **DECIDED** (owner settled the direction), **FIXED**.
+Status key: **OPEN** (not started), **PARTLY** (some of it built), **DONE** (built, Studio NOT RUN unless noted), **ON HOLD**.
 
-## 1. Match loop: OPEN (critical)
-- Direction **DECIDED** (owner 2026-10-21): tug of war, no waves. Win = Zombie Core destroyed, loss = Base Core destroyed.
-- Still missing: start/lobby, match timer, win and loss handling, results screen, reset. When the Base Core dies it just disappears (`Structures.server.luau:116`: "Core destruction ending the match comes next"). Destroying the Zombie Core stops zombie spawns but nothing declares a win.
-- No mission epoch exists yet, so delayed callbacks (storms, spits, events, respawns) would leak into a next match.
-- Gold, levels, masteries and base upgrades last the whole server session; `BaseUpgrades.reset()` exists but nothing calls it.
-- Fix: T05 (state machine `Lobby -> Countdown -> Fighting -> Results -> Resetting`, `Mission` attributes, epoch), T10 (core `Died` = loss, Zombie Core `Died` = win, committed once), T15 (results and full reset).
+## Summary
 
-## 2. MOBA leftovers: PARTLY
-- Pushing out is now the intended win (DECIDED), so soldiers marching to the Zombie Core is correct.
-- **DONE 2026-10-23, removed:** **Barracks-destroyed bonus still live** (`Minions.server.luau:463`): when zombies destroy one of our barracks, every new zombie gets +25% health and damage for the rest of the session (`BarracksBonus = 0.25`). Zombies have no barracks, so we can never get it. Decide: keep it as a "losing ground hurts" rule, or cut it.
-- **DONE 2026-10-23, removed:** **Lock rule still on our side** (`GuardedBy` in `src/map/PlayerBase.model.json`): zombies cannot hurt a barracks until its tower falls, or the Base Core until a barracks falls. The Zombie Core has no guard. Decide: keep (MOBA-style layers of defence) or cut (core always hittable).
-- Soldier `Lifetime` 600 s is now only a safety net for stuck units: fine.
-- **Unit caps are off** (owner 2026-10-23: leave them off for now) (`MaxAlive = math.huge` for the stress test). Must go back to real numbers (were 40 / 70) after the frame-rate test.
+| # | Area | Status | What is left |
+|---|---|---|---|
+| 1 | Match loop | PARTLY | Lobby/start, reset and restart, mission epoch |
+| 2 | MOBA leftovers | DONE | Unit caps still off (owner: leave off for now) |
+| 3 | Pressure curve | PARTLY | Steady time escalation, frontline pressure, Ripper in rotation, boss |
+| 4 | Economy | DONE (to tune) | Measure the `[Economy]` log, then tune costs; match length target |
+| 5 | Sound | OPEN | Everything |
+| 6 | Death and revive | DONE | Healing outside combat; solo has no revive |
+| 7 | Building | ON HOLD | |
+| 8 | Co-op incentives | PARTLY | Combos, ping |
+| 9 | HUD | PARTLY | Next-event countdown, under-attack alerts, front line, key hints |
+| 10 | Mage kit | OPEN | Unchanged |
+| 11 | Uncommitted work | OPEN | 21 changed files and 5 new ones not committed |
+| 12 | Test evidence | OPEN | Formal Studio pass still not run |
+
+## 1. Match loop: PARTLY
+- **Done (2026-10-23, uncommitted):** `src/server/Match.luau` commits the result once when either core dies (Workspace `MatchResult`, `MatchEndedAt`). After the result everything freezes: no damage (`CombatService`), no spawns or movement (`Minions`), no events (`ZombieEvents`), towers hold fire, hero actions and revives refused. Match clock (`MatchTimer.client.luau`), core strip with both core bars (`CoreStrip.client.luau`), score screen (`MatchEnd.client.luau`: VICTORY/DEFEAT, time, Gold earned, per-player level, kills, masteries, Zombie Cores reward 50). Dev panel Win / Lose.
+- **Missing:**
+  - No start: the match begins when the server starts. No lobby, ready check or countdown (T05).
+  - Reset built 2026-10-23 (T15, Studio NOT RUN): after the result everyone returns to the lobby and the battlefield resets. `BaseUpgrades.reset()` exists but nothing calls it; Gold, levels, masteries, `ReviveUsed`, events, nests and units are never cleared (T15).
+  - No mission epoch: delayed callbacks (respawns, storms, spits, event timers) are not tied to a match. Needed before reset can be safe.
+  - Zombie Cores reward is only a Player attribute; nothing saves it (T20).
+  - Name clash: the currency "Zombie Cores" shares its name with the Zombie Core building (noted in TASK_STATUS).
+
+## 2. MOBA leftovers: DONE
+- Lock rule removed (tower -> barracks -> core order, `GuardedBy`) 2026-10-23.
+- Barracks-destroyed bonus removed 2026-10-23.
+- Pushing out is the intended win, so soldiers marching to the Zombie Core is correct.
+- Still open: **unit caps off** (`MaxAlive = math.huge` for both teams; owner 2026-10-23: leave off for now). With events every 1:30, Surges, Ambushes and nests, unit count can grow without limit. Turn back on (were 40 soldiers / 70 zombies) once the frame-rate test is done.
+- `Lifetime` 600 s stays as a safety net for stuck units.
 
 ## 3. Pressure curve: PARTLY
-- Built: Brute and Spitter variants (10% / 15% of zombie slots); battlefield events every 180 s (Nest, Surge with a 15-zombie burst, Evolve +25% zombie strength each time, permanent).
-- Missing: steady time escalation (zombie stats or group size by minute), frontline pressure (more zombies the closer we push), a runner type that slips past soldiers, the boss (T22). Evolve only happens when it is rolled, so escalation is random.
+- **Built:**
+  - Zombie variants: Brute (500 HP, 10% of slots, from 3:00), Spitter (70 HP, 15%, from 6:00).
+  - Events every 1:30 (first at 1:30): Zombie Nest (1000 HP, guarded), Zombie Surge (core 1.5x, nests 1.5x, 5-zombie burst), Zombies Evolve (+25% zombie strength each time, permanent, about every 6 minutes), Zombie Ambush (15 zombies in groups of 1-5 across the field).
+  - Zombies now chase whoever damages them (within 45 studs, 3 s switch lock) unless already hitting something.
+- **Missing:**
+  - Steady escalation: the only lasting ramp is Evolve, which comes at random about every 6 minutes. No zombie group size or stats by minute.
+  - Frontline pressure (more zombies the closer we push to their core) from the agreed tug-of-war plan.
+  - **Ripper** (fast, 80 HP, double claw) exists but only from the dev panel; when it joins the groups or arrivals is the owner's call.
+  - Boss (T22, design OPEN).
 
-## 4. Economy: REWORKED 2026-10-23 (shared Gold per zombie death by kind + last-hit bonus + nest reward, start at 0; XP 20 + 2 per level, by kind; numbers to be tuned from the Studio [Economy] log; see GDD). History below.
-- Income: 1 Gold per killing blow by your hero (`PerLastHit`). Zombies arrive at 4 every 4 s (60 a minute). Soldiers, towers and allies take most kills; a player landing about 15 a minute earns about 15 Gold a minute.
-- Costs: 18 upgrades, 3,850 Gold in total. That is about 4 hours of play for one player. `Gold.Starting = 1000` (TEMPORARY) and the dev panel's +200 Gold hide this.
-- Gold is per player, upgrades are shared by the side: one player can fund everything or spend on something the others did not want.
-- Nests, Brutes and Spitters give the same 1 Gold as a plain zombie. Destroying a nest gives nothing.
-- XP runs much faster than Gold: every zombie death gives every player 1 XP, 30 per level, so level 25 arrives at about 12 minutes.
+## 4. Economy: DONE, needs tuning
+- **Built (owner choice 2026-10-23):** every zombie death pays every player (Zombie 1, Spitter 2, Ripper 2, Brute 4), the killer also gets +2, a nest pays everyone 40, starting Gold 0. XP by kind (1/2/2/3), level N to N+1 costs 20 + 2 per level, max 25. Studio prints an `[Economy]` line every minute.
+- Gold is still per player (each player gets their own share); upgrades are still shared by the side. Every player is paid the same base share, so the "one player funds everything" problem is smaller but still possible.
+- Estimates only (not measured): 50-70 Gold a minute per player, so all 18 upgrades (3,850 Gold) in about 55-75 minutes solo; first mastery about 1:45; level 25 about 17-18 minutes.
+- **Missing:** a measured `[Economy]` log from a real 10+ minute run; a target match length to tune costs and the level curve against (owner decision).
 
 ## 5. Sound: OPEN
-- Still zero `Sound` instances in `src`. First pass: bolt cast/hit, kill tick, Strike thunder, teleport, level-up and mastery ping, core-under-attack alarm, event horn, Brute smash, Spitter splat, ambient music.
+- Still no sounds in `src` (the only "Sound" match is `TargetInfo.client.luau` removing sounds from portrait copies).
+- First pass: bolt cast/hit, kill tick, Strike thunder, teleport, level-up and mastery ping, downed and revive, Base Core hit alarm, event horn (events now have red banners), Brute smash, Spitter splat, Ripper claws, win/lose stings, ambient music.
 
-## 6. Death is free: ADDRESSED 2026-10-23 (downed state, countdown 5 s + 1 s/level max 20, revive once per match by an ally holding F, 2 s spawn protection; see GDD). History below.
-- `Heroes.server.luau`: Roblox respawns you after 5 s (`RespawnTime`) at full health on the pad, keeping level, XP and masteries. No penalty, no death screen, no countdown.
-- Regen is 0.5 HP/s in and out of combat (about 17 minutes from empty). So when badly hurt, the fastest heal is to die.
-- No revive exists. A full party wipe has no effect (the GDD marks it OPEN).
-- The server keeps no "downed" state; the Humanoid simply dies and `Players.RespawnTime` handles the rest.
+## 6. Death and revive: DONE
+- **Built 2026-10-23:** at 0 HP you are downed (body on the ground, placed by raycast), grey death screen with an orbit camera; respawn after 5 s + 1 s per level above 1 (max 20 s) on the shared spawn pad at full health; an ally holding F for 3 s within 6 studs revives you where you fell at 30% health, once per player per match; 2 s spawn protection; popups to everyone; party portrait greyed with the timer and revive progress; a party wipe changes nothing (owner).
+- **Still open:**
+  - Healing: regen is still 0.5 HP/s everywhere (about 17 minutes from empty). Dying is now slower than before (up to 20 s at high level), but there is still no way to heal up except waiting or dying. Out-of-combat regen or a pad heal was proposed, not decided.
+  - Solo players can never be revived (revive needs an ally). Owner to decide whether that is fine.
+  - Revive once per match has no reset yet (needs T15).
 
 ## 7. Building: ON HOLD (owner 2026-10-21)
-- Build nodes, walls, traps and repair are on hold since the tug-of-war redesign. Base upgrades are still invisible percentage buffs (no visual change on towers or barracks).
+- Build nodes, walls, traps and repair on hold since the tug-of-war redesign. Base upgrades are still invisible percentage buffs (no visual change on towers or barracks).
 
-## 8. Co-op incentives: OPEN
-- Shared: XP, base upgrades, soldier masteries (no stacking). Individual: Gold, kills. No revive, no combos, no ping.
+## 8. Co-op incentives: PARTLY
+- Now shared: XP, Gold share per zombie death, base upgrades, soldier masteries (no stacking), revive, mastery popups to everyone.
+- Missing: combos between players, a ping/marker key.
 
-## 9. HUD gaps: PARTLY (next)
-- Built: health/XP/level, ability slots with cooldowns, Gold, minimap, target panel, party list, Tab scoreboard, banners for structures and events, structure bars over the buildings (only within 60 studs).
-- Missing:
-  - Base Core and Zombie Core health on the HUD (visible from anywhere);
-  - match timer and a countdown to the next event (events fire every 180 s with no warning);
-  - "Core under attack" / "Barracks under attack" alerts;
-  - death screen with respawn countdown (and revive progress once it exists);
-  - where the front line is (a tug-of-war bar or a minimap marker);
-  - onboarding key hints (LMB, Q, E, F, U, Tab).
+## 9. HUD: PARTLY
+- **Built:** health/XP/level, ability slots with cooldowns, Gold, minimap, target panel (with ally hover and real-colour portraits), party list with downed state, Tab scoreboard, red event banners, structure bars, **core strip** (both cores, always visible), **match clock with running-event pills**, **death screen**, **score screen**, mastery popups.
+- **Missing:**
+  - Countdown to the *next* event (the clock only shows events already running).
+  - "Base Core / Barracks / Tower under attack" alerts (the core strip shows health, but nothing calls attention to a hit).
+  - Front-line indicator (where the clash is).
+  - First-match key hints (LMB, Q, E, F, U, Tab, and F to revive).
 
-## 10. Mage kit: unchanged
-- Bolt range 24 vs Strike 40; no ultimate; Storm Banner (+10% soldier damage) invisible; Teleport ignores fences; sword-slash attack animation (T25).
+## 10. Mage kit: OPEN (unchanged)
+- Bolt range 24 vs Strike 40; no ultimate; Storm Banner (+10% soldier damage) invisible; Teleport ignores fences (Strike/Teleport now accept aim up to 10 studs past range while walking); sword-slash attack animation (T25).
+- Archer and Warrior classes not started.
 
-## 11. Built ahead of the loop
-- Level curve tuned for nothing: level 25 at about 12 minutes of a match with no end.
-- Studio-only dev panel is useful; keep it Studio-only (it checks `RunService:IsStudio()`).
+## 11. Uncommitted work: OPEN
+- `git status` shows 21 modified files and new `Match.luau`, `CoreStrip.client.luau`, `MatchEnd.client.luau`, `docs/14_MONETIZATION_IDEAS.md`, `docs/reference/` not committed (win/loss, score screen, Ripper and its swipes, colour changes). Worth a commit before the next slice.
 
 ## 12. Test evidence: OPEN
-- Every slice since the Mage rewrite is Studio NOT RUN apart from owner screenshots of the Brute and the puddle. `docs/STUDIO_TEST_PASS.md` section 7 still describes waves and two zombie cores and needs updating before it is run.
+- Owner Studio evidence so far: portrait colours (PASS), Ripper arm motion (partial: twist showed, swing fixed afterwards), plus screenshots that led to fixes (menus, downed body, puddle, Brute arms). Everything else since the Mage rewrite is Studio NOT RUN.
+- `docs/STUDIO_TEST_PASS.md` has been updated for groups and the new screens, but section 8 still says "after 5 minutes of waves", and it has no steps yet for downed/revive, the core strip, events/arrivals or the Ripper.
+- Status lines in `TASK_STATUS.md` for T05, T15 and T23 lag behind the dated log (fixed for T11 and T23 in this review).
 
-## Decisions for the next session (owner to answer; not asked yet)
-Next work (owner 2026-10-22): death and revive, economy, extra HUD. Options below are proposals; the first in each list is Claude's recommendation.
+## Decisions still open (owner)
+1. **Healing:** out-of-combat regen (for example 3% max HP/s after 5 s without damage), a spawn-pad heal (10%/s), both, or keep 0.5/s only.
+2. **Solo revive:** can a solo player revive at all (for example a self-revive once per match), or always wait out the timer?
+3. **Match length target** (to tune Gold, costs and the level curve).
+4. **Escalation:** add a steady ramp (zombie group size or stats per minute) on top of Evolve, and/or frontline pressure?
+5. **Ripper:** when does it join (arrival time, share of slots), and keep the name and numbers?
+6. **Unit caps:** turn back on after the frame-rate test (at what numbers)?
+7. **Next slice:** T05 + T15 (start and reset), sound, or the remaining HUD items.
 
-1. **Death cost and coming back**
-   - a. Downed + revive: at 0 HP you go down for about 12 s; an ally holds F beside you for 3 s to revive you at 40% HP. If nobody does, you die and respawn after 5 s + 1 s per level (max 20 s) at the pad.
-   - b. Scaling respawn only: no downed state, respawn 5 s + 1 s per level (max 20 s). Simplest, works solo.
-   - c. As a, and a real death also costs 10% of your Gold.
-2. **Solo play with revive:** if revive is chosen, can a solo player self-revive (for example once per few minutes), or do they always bleed out?
-3. **Full party wipe:** does everyone dead at once lose the match, or only the Base Core falling?
-4. **Healing**
-   - a. Out-of-combat regen + pad: after 5 s without damage regen rises to 3% max HP/s; standing on the spawn pad heals 10%/s; in combat stays 0.5/s.
-   - b. Pad heal only (keep 0.5/s everywhere).
-   - c. Out-of-combat regen only.
-5. **Gold model**
-   - a. Shared team pool: one balance for the side, any player buys at the Workbench; scoreboard still shows who earned what.
-   - b. Personal Gold plus a share of every zombie death (like XP), with a bonus for last hits.
-   - c. Keep personal last-hit Gold and just retune amounts and costs.
-6. **Gold amounts:** target time to afford everything (for example 60% of the upgrades in a 20-minute match), Gold per zombie type (Brute and Spitter worth more?), a reward for destroying a nest, and when `Gold.Starting` goes to 0.
-7. **Match length target** (needed to tune both Gold and the level curve): roughly how long should a winning match take?
-8. **HUD first slice** (pick any):
-   - a. Base Core and Zombie Core health at top centre, always visible, flashing when hit.
-   - b. Match timer and a countdown to the next battlefield event, with a 10 s warning.
-   - c. Throttled "Base Core / Barracks / Tower under attack" alerts.
-   - d. Death screen with respawn countdown (and downed / revive progress).
-   - e. Front-line indicator (tug-of-war bar or minimap marker).
-   - f. First-match key hints (LMB, Q, E, F, U, Tab).
-9. **MOBA leftovers:** keep or cut the barracks-destroyed bonus (zombies +25% after taking one of our barracks), and keep or cut the lock rule (tower before barracks before Base Core).
-10. **Unit caps:** turn them back on (were 40 soldiers / 70 zombies) now, or after the frame-rate test?
+## Suggested order
+1. Commit the current work.
+2. Run the Studio pass (update section 8 and add downed/revive, core strip, events, Ripper steps first).
+3. T05 + T15: start countdown, epoch, full reset and "Play again", so matches can be played back to back. This is the last big piece of the core loop.
+4. Remaining HUD items (next-event countdown, under-attack alerts, key hints).
+5. Tune the economy and level curve from a measured `[Economy]` log against the match length target.
+6. Sound pass.
+7. Steady escalation, Ripper in rotation, unit caps back on.
+8. Then Archer and Warrior, and persistent progression (T20).
 
-## Doc fixes made in this review
-- `docs/02_GDD.md`: mission flow and win line still described waves ("final wave cleared"); now say tug of war, Zombie Core destroyed.
+## History
+- 2026-10-22 pass: found the barracks-destroyed bonus and lock rule still live (both removed 2026-10-23), unit caps off; GDD win line fixed from waves to tug of war; death, economy and HUD chosen as next work.
+- 2026-10-23 pass (this one): death/revive, economy rework, win/loss with core strip and score screen, events every 1:30 with Ambush and arrivals, zombie retaliation and the Ripper all built since; match start, reset, sound, healing and the remaining HUD items are what is left.

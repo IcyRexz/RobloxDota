@@ -197,6 +197,76 @@ export type Menu = {
 	fitToScreen: () -> (),
 }
 
+export type Window = {
+	window: Frame, -- the gold rim
+	body: Frame, -- the blue body inside it
+	titleLabel: TextLabel,
+	closeButton: TextButton,
+	-- Scales the window to MenuScale, shrunk to fit the screen. Call when showing it.
+	fitToScreen: () -> (),
+}
+
+-- The frame every menu shares: a gold rim around a blue body, the title on
+-- the rim (top left, flush with the content; owner 2026-10-22: no icon) and
+-- a red X on the top-right corner. Centred in `parent`; width and height at 1x.
+function MenuKit.window(parent: Instance, width: number, height: number, titleText: string): Window
+	local window = UiTheme.block(parent, "Gold", UiTheme.RadiusLarge)
+	window.Name = "Window"
+	window.AnchorPoint = Vector2.new(0.5, 0.5)
+	window.Position = UDim2.fromScale(0.5, 0.5)
+	window.Size = UDim2.fromOffset(width, height)
+	local fit = Instance.new("UIScale")
+	fit.Parent = window
+	local body = UiTheme.block(window, "Blue", UiTheme.RadiusLarge - MenuKit.RIM // 2, 2)
+	body.Name = "Body"
+	body.Position = UDim2.fromOffset(MenuKit.RIM, MenuKit.RIM)
+	body.Size = UDim2.new(1, -MenuKit.RIM * 2, 1, -MenuKit.RIM * 2)
+	UiTheme.setOutline(body, Color3.fromRGB(26, 111, 192), 2)
+
+	local titleLabel = UiTheme.text(window, Size.Display, Font.Heavy)
+	titleLabel.Name = "Title"
+	titleLabel.AnchorPoint = Vector2.new(0, 0.5)
+	titleLabel.Position = UDim2.fromOffset(MenuKit.PAD, 4)
+	titleLabel.Size = UDim2.fromOffset(0, 40)
+	titleLabel.AutomaticSize = Enum.AutomaticSize.X
+	titleLabel.TextTruncate = Enum.TextTruncate.None
+	titleLabel.ZIndex = 5
+	titleLabel.Text = titleText
+
+	local closeButton = blockButton(window, "Red", UiTheme.Radius)
+	closeButton.Name = "Close"
+	closeButton.AnchorPoint = Vector2.new(1, 0)
+	closeButton.Position = UDim2.new(1, space(3), 0, -space(4))
+	closeButton.Size = UDim2.fromOffset(48, 44)
+	closeButton.ZIndex = 5
+	UiTheme.pressable(closeButton)
+	local closeX = UiTheme.text(closeButton, Size.Heading, Font.Heavy)
+	closeX.Size = UDim2.fromScale(1, 1)
+	closeX.TextXAlignment = Enum.TextXAlignment.Center
+	closeX.ZIndex = 6
+	closeX.Text = "X"
+
+	local function fitToScreen()
+		local viewport = Workspace.CurrentCamera.ViewportSize
+		fit.Scale = math.min(UiTheme.MenuScale * UiTheme.screenFactor(), (viewport.X - 48) / width, (viewport.Y - 64) / height)
+	end
+	return { window = window, body = body, titleLabel = titleLabel, closeButton = closeButton, fitToScreen = fitToScreen }
+end
+
+-- A block button with centred outlined text (Fredoka), pressable. Fill and
+-- text can be changed later with UiTheme.setFill and the returned label.
+-- `wide` (full-width cards) grows less on hover so it stays inside its window.
+function MenuKit.button(parent: Instance, fill: UiTheme.FillName, text: string, textSize: number?, wide: boolean?): (TextButton, TextLabel)
+	local button = blockButton(parent, fill, UiTheme.Radius)
+	button.Name = text
+	UiTheme.pressable(button, wide)
+	local label = UiTheme.text(button, textSize or Size.Title, Font.Heavy)
+	label.Size = UDim2.fromScale(1, 1)
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.Text = text
+	return button, label
+end
+
 -- Builds the window (hidden).
 function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 	local screen = Instance.new("ScreenGui")
@@ -218,44 +288,8 @@ function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 	scrim.Modal = true
 	scrim.Parent = screen
 
-	-- The window is the gold rim; the blue body sits inside it.
-	local window = UiTheme.block(screen, "Gold", UiTheme.RadiusLarge)
-	window.Name = "Window"
-	window.AnchorPoint = Vector2.new(0.5, 0.5)
-	window.Position = UDim2.fromScale(0.5, 0.5)
-	window.Size = UDim2.fromOffset(MenuKit.WIDTH, MenuKit.HEIGHT)
-	local fit = Instance.new("UIScale")
-	fit.Parent = window
-	local body = UiTheme.block(window, "Blue", UiTheme.RadiusLarge - MenuKit.RIM // 2, 2)
-	body.Name = "Body"
-	body.Position = UDim2.fromOffset(MenuKit.RIM, MenuKit.RIM)
-	body.Size = UDim2.new(1, -MenuKit.RIM * 2, 1, -MenuKit.RIM * 2)
-	UiTheme.setOutline(body, Color3.fromRGB(26, 111, 192), 2)
-
-	-- Title on the rim, flush left (owner 2026-10-22: no icon), and the close button.
-	local titleLabel = UiTheme.text(window, Size.Display, Font.Heavy)
-	titleLabel.Name = "Title"
-	titleLabel.AnchorPoint = Vector2.new(0, 0.5)
-	titleLabel.Position = UDim2.fromOffset(MenuKit.PAD, 4)
-	titleLabel.Size = UDim2.fromOffset(0, 40)
-	titleLabel.AutomaticSize = Enum.AutomaticSize.X
-	titleLabel.TextTruncate = Enum.TextTruncate.None
-	titleLabel.ZIndex = 5
-	titleLabel.Text = options.title
-
-
-	local closeButton = blockButton(window, "Red", UiTheme.Radius)
-	closeButton.Name = "Close"
-	closeButton.AnchorPoint = Vector2.new(1, 0)
-	closeButton.Position = UDim2.new(1, space(3), 0, -space(4))
-	closeButton.Size = UDim2.fromOffset(48, 44)
-	closeButton.ZIndex = 5
-	UiTheme.pressable(closeButton)
-	local closeX = UiTheme.text(closeButton, Size.Heading, Font.Heavy)
-	closeX.Size = UDim2.fromScale(1, 1)
-	closeX.TextXAlignment = Enum.TextXAlignment.Center
-	closeX.ZIndex = 6
-	closeX.Text = "X"
+	local shell = MenuKit.window(screen, MenuKit.WIDTH, MenuKit.HEIGHT, options.title)
+	local window, body, titleLabel, closeButton = shell.window, shell.body, shell.titleLabel, shell.closeButton
 
 	local function column(columnName: string, x: number, width: number): Frame
 		local frame = Instance.new("Frame")
@@ -499,10 +533,7 @@ function MenuKit.new(name: string, parent: Instance, options: Options): Menu
 	closeHint.TextXAlignment = Enum.TextXAlignment.Right
 	closeHint.Text = options.closeText
 
-	local function fitToScreen()
-		local viewport = Workspace.CurrentCamera.ViewportSize
-		fit.Scale = math.min(UiTheme.MenuScale * UiTheme.screenFactor(), (viewport.X - 48) / MenuKit.WIDTH, (viewport.Y - 64) / MenuKit.HEIGHT)
-	end
+	local fitToScreen = shell.fitToScreen
 
 	local menu: Menu = {
 		screen = screen,

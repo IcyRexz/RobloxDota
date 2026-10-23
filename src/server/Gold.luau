@@ -1,11 +1,14 @@
 --!strict
 -- Gold (T11; owner 2026-10-20 / 2026-10-21; economy rework 2026-10-23): each
 -- player's own Gold.
---  * Earned: every zombie death (killed by anyone) gives every player
---    Config.Gold.PerDeath for its kind; the player whose hero landed the
---    killing hit also gets LastHitBonus. A fallen Zombie Nest gives every
---    player PerNest.
---  * Every player starts with Config.Gold.Starting.
+--  * Earned: every zombie death (killed by anyone) gives every player in the
+--    battle Config.Gold.PerDeath for its kind; the player whose hero landed
+--    the killing hit also gets LastHitBonus. A fallen Zombie Nest gives every
+--    player in the battle PerNest. Players waiting in the lobby get nothing.
+--  * Every player starts with Config.Gold.Starting, again at every
+--    battlefield reset (T15, Match.onReset), with Kills and GoldEarned.
+--  * Workspace attribute GoldEarned: all Gold the players have earned this
+--    match together (kills and nests; not the dev panel), for the end screen.
 --  * Studio only: each minute Output shows zombie deaths, Gold and levels for
 --    that minute ([Economy] lines), for tuning the numbers.
 --  * Spent: Gold.spend (base upgrades, BaseUpgrades.luau).
@@ -23,8 +26,10 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local CombatService = require(script.Parent.CombatService)
+local Match = require(script.Parent.Match)
 local Config = require(ReplicatedStorage.Shared.Config)
 
 local Gold = {}
@@ -67,11 +72,16 @@ end
 local minuteDeaths = 0
 local minuteGold: { [Player]: number } = {}
 
+local teamEarned = 0
+Workspace:SetAttribute("GoldEarned", 0)
+
 local function give(player: Player, amount: number)
 	local current = goldOf[player]
 	if current and amount > 0 then
 		setGold(player, current + amount)
 		minuteGold[player] = (minuteGold[player] or 0) + amount
+		teamEarned += amount
+		Workspace:SetAttribute("GoldEarned", teamEarned)
 	end
 end
 
@@ -80,8 +90,9 @@ CombatService.Died:Connect(function(target: Instance, killer: Instance)
 		return
 	end
 	local kind = target:GetAttribute("Kind")
+	-- Only the players in the battle are paid (not those waiting in the lobby).
 	if kind == "Nest" then
-		for _, player in Players:GetPlayers() do
+		for _, player in Match.partyMembers() do
 			give(player, Config.Gold.PerNest)
 		end
 		return
@@ -92,12 +103,12 @@ CombatService.Died:Connect(function(target: Instance, killer: Instance)
 	local unitType = target:GetAttribute("MinionType")
 	local share = (if type(unitType) == "string" then Config.Gold.PerDeath[unitType] else nil) or Config.Gold.PerDeath.Zombie
 	local killerPlayer = if killer:IsA("Model") then Players:GetPlayerFromCharacter(killer) else nil
-	for _, player in Players:GetPlayers() do
+	for _, player in Match.partyMembers() do
 		if player ~= killerPlayer then
 			give(player, share)
 		end
 	end
-	if killerPlayer and goldOf[killerPlayer] then
+	if killerPlayer and goldOf[killerPlayer] and Match.inParty(killerPlayer) then
 		killsOf[killerPlayer] = (killsOf[killerPlayer] or 0) + 1
 		killerPlayer:SetAttribute("Kills", killsOf[killerPlayer])
 		local amount = share + Config.Gold.LastHitBonus
@@ -136,6 +147,16 @@ Players.PlayerAdded:Connect(onPlayer)
 for _, player in Players:GetPlayers() do
 	onPlayer(player)
 end
+
+-- The battlefield reset (T15): everyone back to the starting Gold and no kills.
+Match.onReset(50, "Gold", function()
+	for _, player in Players:GetPlayers() do
+		onPlayer(player)
+	end
+	teamEarned = 0
+	Workspace:SetAttribute("GoldEarned", 0)
+	table.clear(minuteGold)
+end)
 Players.PlayerRemoving:Connect(function(player)
 	goldOf[player] = nil
 	killsOf[player] = nil

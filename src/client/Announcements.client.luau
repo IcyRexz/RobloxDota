@@ -5,9 +5,13 @@
 --   Zombies lost a core
 --   Enemy core destroyed
 -- No team colours. Banners queue, so two quick events show one after another.
+-- Battlefield events and arrivals use a red block (owner 2026-10-23); every
+-- other banner stays navy.
 -- Also small popups on the right (owner 2026-10-23) when a player falls or is
 -- revived ("Bob has fallen", "Zac revived Bob") or picks a mastery ("Zac took
--- Chain Bolt", gold dot), stacked, each fading after a
+-- Chain Bolt", gold dot), or one of our buildings is under attack ("Base Core
+-- under attack", red dot; owner 2026-10-23: at most once per building every
+-- Config.Display.UnderAttackCooldown seconds), stacked, each fading after a
 -- few seconds; the revived player also gets a "YOU HAVE BEEN REVIVED" banner.
 -- Display only: the server decides when a structure is destroyed, who falls
 -- and who is revived (HeroDowned, from Heroes.server).
@@ -15,8 +19,10 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local space = UiTheme.space
@@ -50,6 +56,7 @@ screen.Name = "Announcements"
 screen.ResetOnSpawn = false
 screen.DisplayOrder = 10
 screen.Parent = player:WaitForChild("PlayerGui")
+GameContext.showIn(screen, "Battle") -- battle UI: hidden in the lobby
 
 local banner = UiTheme.panel(screen, nil, UiTheme.RadiusLarge)
 banner.Name = "Banner"
@@ -94,7 +101,7 @@ end
 
 -- Queue ----------------------------------------------------------------------------
 
-type Message = { headline: string, subline: string }
+type Message = { headline: string, subline: string, fill: UiTheme.FillName? }
 local queue: { Message } = {}
 local showing = false
 
@@ -108,6 +115,7 @@ local function showNext()
 	showing = true
 	headline.Text = message.headline
 	subline.Text = message.subline
+	UiTheme.setFill(banner, message.fill or "Navy")
 	banner.BackgroundTransparency = 1
 	headline.TextTransparency = 1
 	subline.TextTransparency = 1
@@ -157,14 +165,14 @@ zombieEvent.OnClientEvent:Connect(function(id: unknown, phase: unknown)
 	for _, info in Config.Events.List do
 		if info.id == id then
 			announce(if phase == "Start"
-				then { headline = string.upper(info.name), subline = info.text }
-				else { headline = `{info.name} is over`, subline = "Zombies are back to normal" })
+				then { headline = string.upper(info.name), subline = info.text, fill = "Red" }
+				else { headline = `{info.name} is over`, subline = "Zombies are back to normal", fill = "Red" })
 			return
 		end
 	end
 	for _, arrival in Config.Events.Arrivals do
 		if arrival.id == id and phase == "Start" then
-			announce({ headline = string.upper(arrival.name), subline = arrival.text })
+			announce({ headline = string.upper(arrival.name), subline = arrival.text, fill = "Red" })
 			return
 		end
 	end
@@ -275,3 +283,41 @@ pickedEvent.OnClientEvent:Connect(function(who: unknown, id: unknown)
 		end
 	end
 end)
+
+-- Under attack: one of our buildings losing health (its Health attribute
+-- going down) shows a popup, at most once per building per cooldown.
+local UNDER_ATTACK_NAMES: { [string]: string } = { Core = "Base Core", Barracks = "Barracks", Tower = "Tower" }
+local lastAlertAt: { [Instance]: number } = {}
+local function watchBuilding(item: Instance)
+	local kind = item:GetAttribute("Kind")
+	if not (item:IsA("BasePart") and type(kind) == "string" and UNDER_ATTACK_NAMES[kind] and item:GetAttribute("Team") == DEFENDERS) then
+		return
+	end
+	local function health(): number
+		local value = item:GetAttribute("Health")
+		return if type(value) == "number" then value else 0
+	end
+	local last = health()
+	item:GetAttributeChangedSignal("Health"):Connect(function()
+		local now = health()
+		local hit = now < last
+		last = now
+		if not hit or now <= 0 or Workspace:GetAttribute("MatchResult") ~= nil then
+			return
+		end
+		local clock = os.clock()
+		if clock - (lastAlertAt[item] or -math.huge) >= Config.Display.UnderAttackCooldown then
+			lastAlertAt[item] = clock
+			popup(`{UNDER_ATTACK_NAMES[kind]} under attack`, UiTheme.Enemy)
+		end
+	end)
+	item.Destroying:Connect(function()
+		lastAlertAt[item] = nil
+	end)
+end
+local arena = Workspace:WaitForChild("Arena")
+for _, item in arena:GetDescendants() do
+	watchBuilding(item)
+end
+-- Buildings put back by the battlefield reset (T15) arrive as new parts.
+arena.DescendantAdded:Connect(watchBuilding)

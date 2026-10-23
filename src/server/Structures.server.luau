@@ -1,5 +1,6 @@
 --!strict
--- Structures: tower targeting and firing, and removing destroyed structures.
+-- Structures: tower targeting and firing, removing destroyed structures and
+-- putting them back when the battlefield resets (T15).
 -- Each living tower shoots the nearest enemy unit in range (keeping its current
 -- target while it stays in range) every TowerAttackInterval seconds. The shot
 -- flies to its target and the damage lands on arrival, so a tower can steal a
@@ -7,11 +8,13 @@
 -- Buildings upgrades (BaseUpgrades.towerStats, read on every check).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
 local BaseUpgrades = require(script.Parent.BaseUpgrades)
 local CombatService = require(script.Parent.CombatService)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Match = require(script.Parent.Match)
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
 
 local StructureConfig = Config.Structure
@@ -111,25 +114,80 @@ local destroyedEvent = Instance.new("RemoteEvent")
 destroyedEvent.Name = "StructureDestroyed"
 destroyedEvent.Parent = ReplicatedStorage
 
+-- Map structures (not nests) are kept for the reset (T15): when one falls it
+-- is moved, with a tower's knight art, into ServerStorage (gone from the
+-- world for everyone, as before), and the reset puts it back at full health.
+-- Its map max health is remembered here at start.
+local fallenFolder = Instance.new("Folder")
+fallenFolder.Name = "FallenStructures"
+fallenFolder.Parent = ServerStorage
+type Fallen = { part: BasePart, art: Instance?, parent: Instance }
+local fallen: { Fallen } = {}
+local mapMaxHealth: { [BasePart]: number } = {}
+for _, item in arena:GetDescendants() do
+	local maxHealth = item:GetAttribute("MaxHealth")
+	if item:IsA("BasePart") and Targeting.StructureKinds[item:GetAttribute("Kind")] and type(maxHealth) == "number" then
+		mapMaxHealth[item] = maxHealth
+	end
+end
+
 -- A destroyed structure disappears (with a tower's knight art) and everyone is
--- told. Code holding a reference sees it as dead: CombatService.isAlive checks
--- Parent, so the next structure unlocks. Core destruction ending the match comes next.
+-- told. Code holding a reference sees it as dead: its Health is 0. A core
+-- falling also ends the match (Match.luau listens to Died).
 CombatService.Died:Connect(function(target: Instance, _killer: Instance, killerTeam: string)
 	local kind = target:GetAttribute("Kind")
 	local team = target:GetAttribute("Team")
 	if not (target:IsA("BasePart") and typeof(kind) == "string" and Targeting.StructureKinds[kind] and typeof(team) == "string") then
 		return
 	end
-	local art = target.Parent and target.Parent:FindFirstChild(target.Name .. "Visual")
-	if art then
-		art:Destroy()
+	local parent = target.Parent
+	local art = parent and parent:FindFirstChild(target.Name .. "Visual")
+	if mapMaxHealth[target] and parent then
+		table.insert(fallen, { part = target, art = art, parent = parent })
+		if art then
+			art.Parent = fallenFolder
+		end
+		target.Parent = fallenFolder
+	else
+		if art then
+			art:Destroy()
+		end
+		target:Destroy() -- a zombie nest: made fresh by each event
 	end
-	target:Destroy()
 	destroyedEvent:FireAllClients(kind, team, killerTeam)
 	print(`[Structures] {target.Name} destroyed by {killerTeam}`)
 end)
 
+-- The reset (T15, Match.onReset): fallen map structures come back, every map
+-- structure is at its map max health (base upgrades re-apply after this
+-- step), towers forget their targets, and any nest is removed.
+Match.onReset(10, "Structures", function()
+	for _, entry in fallen do
+		if entry.art then
+			entry.art.Parent = entry.parent
+		end
+		entry.part.Parent = entry.parent
+	end
+	table.clear(fallen)
+	for part, maxHealth in mapMaxHealth do
+		part:SetAttribute("MaxHealth", maxHealth)
+		part:SetAttribute("Health", maxHealth)
+	end
+	for _, tower in towers do
+		tower.target = nil
+		tower.nextShotAt = 0
+	end
+	for _, item in arena:GetChildren() do
+		if item:GetAttribute("Kind") == "Nest" then
+			item:Destroy()
+		end
+	end
+end)
+
 local function updateAll()
+	if Workspace:GetAttribute("MatchPhase") ~= "Fighting" then
+		return -- towers fire only during a fight (Match.luau: T05, T10)
+	end
 	local now = os.clock()
 	for _, tower in towers do
 		if CombatService.isAlive(tower.part) then

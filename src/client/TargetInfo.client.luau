@@ -1,5 +1,6 @@
 --!strict
--- Target panel at the top centre (owner 2026-10-21): the face, name and health
+-- Target panel at the top centre, just under the core strip (owner 2026-10-21;
+-- moved down 2026-10-23, T10): the face, name and health
 -- of whatever you are aiming at (the enemy under the red marker, or an ally
 -- under the crosshair, published by HeroControls.client as the local player's
 -- "AimTarget" ObjectValue).
@@ -11,10 +12,10 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local Font = UiTheme.Font
@@ -26,7 +27,7 @@ local PANEL_WIDTH = 260
 local PORTRAIT = 44
 local LINGER_SECONDS = 0.6 -- stays this long after the target is lost
 local FADE_SECONDS = 0.2
-local UNIT_NAMES: { [string]: string } = { Zombie = "Zombie", Brute = "Brute", Spitter = "Spitter", Melee = "Swordsman", Archer = "Archer" }
+local UNIT_NAMES: { [string]: string } = { Zombie = "Zombie", Brute = "Brute", Spitter = "Spitter", Ripper = "Ripper", Melee = "Swordsman", Archer = "Archer" }
 local STRUCTURE_TAGS: { [string]: string } = { Tower = "TWR", Barracks = "BRK", Core = "CORE", Nest = "NEST" }
 -- Players are always on our side; used until the server sets the attribute.
 local DEFAULT_TEAM = Config.Teams.Defenders
@@ -39,11 +40,16 @@ screen.Name = "TargetInfo"
 screen.ResetOnSpawn = false
 screen.IgnoreGuiInset = true
 screen.Parent = player:WaitForChild("PlayerGui")
+GameContext.showIn(screen, "Battle") -- battle UI: hidden in the lobby
 
 local panel = UiTheme.panel(screen)
 panel.Name = "Panel"
 panel.AnchorPoint = Vector2.new(0.5, 0)
-panel.Position = UDim2.new(0.5, 0, 0, space(3))
+-- Just below the core health strip (CoreStrip.client), following the window size.
+UiTheme.onScreenResize(function()
+	local stripBottom = space(3) + UiTheme.CoreStripHeight * UiTheme.Scale * UiTheme.screenFactor()
+	panel.Position = UDim2.new(0.5, 0, 0, stripBottom + space(2))
+end)
 panel.Size = UDim2.fromOffset(PANEL_WIDTH, PORTRAIT + space(4))
 panel.Visible = false
 local canvas = Instance.new("CanvasGroup") -- fades the whole panel at once
@@ -194,7 +200,7 @@ local function setVisible(visible: boolean)
 	end
 end
 
-RunService.RenderStepped:Connect(function()
+GameContext.renderStepped("Battle", function()
 	local target = aimValue.Value
 	if target and isAlive(target) then
 		lostAt = nil

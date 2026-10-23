@@ -5,15 +5,17 @@
 -- The clock is navy and counts up from the match start; each timed event that
 -- is running gets a red pill with its name and time left, to the clock's left,
 -- gone when it ends. Read from server-written Workspace attributes
--- (ZombieEvents): MatchStartedAt and Event<id>EndsAt, in server time.
+-- (ZombieEvents): MatchStartedAt and Event<id>EndsAt, in server time. Once
+-- the match is over (Match.luau: MatchEndedAt) the clock stops at the final
+-- time and the event pills go.
 -- Display only.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local space = UiTheme.space
@@ -74,13 +76,15 @@ for index, info in Config.Events.List do
 	end
 end
 
-RunService.RenderStepped:Connect(function()
-	local now = Workspace:GetServerTimeNow()
+GameContext.renderStepped("Battle", function()
+	local endedAt = Workspace:GetAttribute("MatchEndedAt")
+	local over = type(endedAt) == "number"
+	local now = if over then endedAt :: number else Workspace:GetServerTimeNow()
 	local startedAt = Workspace:GetAttribute("MatchStartedAt")
 	matchClock.Text = if type(startedAt) == "number" then clock(now - startedAt) else "0:00"
 	for _, entry in eventPills do
 		local endsAt = Workspace:GetAttribute(`Event{entry.id}EndsAt`)
-		local left = if type(endsAt) == "number" then endsAt - now else 0
+		local left = if type(endsAt) == "number" and not over then endsAt - now else 0
 		local block = entry.label.Parent :: Frame
 		block.Visible = left > 0
 		if left > 0 then

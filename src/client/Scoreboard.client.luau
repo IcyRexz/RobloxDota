@@ -9,10 +9,11 @@
 --    the wedge shows the revive filling instead.
 --  * Hold Tab: the scoreboard replaces it: one row per player with portrait,
 --    name and class, level, kills, masteries picked (one chip per mastery
---    level: initials in gold once picked, faint while still open) and Gold.
+--    level: initials in gold once picked, faint while still open). No Gold
+--    column (owner 2026-10-23: the Gold counter shows your own).
 --    Your own row is lit. Release Tab to go back.
 -- Roblox's own player list (also on Tab) is turned off. Reads only replicated
--- attributes (Player: Level, Kills, Gold, Mastery<id>; character: Health,
+-- attributes (Player: Level, Kills, Mastery<id>, InParty; character: Health,
 -- MaxHealth, HeroName, DownedAt, RespawnAt, ReviveStartedAt). Display only.
 
 local Players = game:GetService("Players")
@@ -22,6 +23,7 @@ local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local Font = UiTheme.Font
@@ -56,15 +58,14 @@ local function columns(widths: { number }): { Column }
 	return list
 end
 local MASTERY_WIDTH = #Hero.MasteryLevels * (CHIP + CHIP_GAP) - CHIP_GAP
-local layout = columns({ 200, 36, 52, MASTERY_WIDTH, 80 })
+local layout = columns({ 200, 36, 52, MASTERY_WIDTH })
 local COLUMNS = {
 	player = layout[1],
 	level = layout[2],
 	kills = layout[3],
 	masteries = layout[4],
-	gold = layout[5],
 }
-local ROW_WIDTH = COLUMNS.gold.x + COLUMNS.gold.width + ROW_INSET
+local ROW_WIDTH = COLUMNS.masteries.x + COLUMNS.masteries.width + ROW_INSET
 local BOARD_WIDTH = ROW_WIDTH + BOARD_PAD * 2
 
 local player = Players.LocalPlayer
@@ -146,6 +147,7 @@ screen.Name = "Scoreboard"
 screen.ResetOnSpawn = false
 screen.DisplayOrder = 5
 screen.Parent = playerGui
+GameContext.showIn(screen, "Battle") -- battle UI: hidden in the lobby
 
 -- Party list (always on) --------------------------------------------------------------
 
@@ -190,7 +192,12 @@ local function fitBoard()
 		return
 	end
 	local viewport = camera.ViewportSize
-	local rows = #Players:GetPlayers()
+	local rows = 0
+	for _, owner in Players:GetPlayers() do
+		if owner:GetAttribute("InParty") == true then
+			rows += 1
+		end
+	end
 	local height = BOARD_PAD * 2 + HEADER_HEIGHT + rows * (ROW_HEIGHT + space(1))
 	boardScale.Scale = math.min(
 		UiTheme.Scale * UiTheme.screenFactor(),
@@ -220,9 +227,6 @@ playerCaption.Text = "PLAYER"
 cell(header, COLUMNS.level, Size.Caption, Font.Bold, Strength.Faint).Text = "LV"
 cell(header, COLUMNS.kills, Size.Caption, Font.Bold, Strength.Faint).Text = "KILLS"
 cell(header, COLUMNS.masteries, Size.Caption, Font.Bold, Strength.Faint).Text = "MASTERIES"
-local goldCaption = cell(header, COLUMNS.gold, Size.Caption, Font.Bold, Strength.Faint)
-goldCaption.TextXAlignment = Enum.TextXAlignment.Right
-goldCaption.Text = "GOLD"
 
 board.Parent = screen
 
@@ -241,7 +245,6 @@ type Entry = {
 	level: TextLabel,
 	kills: TextLabel,
 	chips: { TextLabel },
-	gold: TextLabel,
 }
 local entries: { [Player]: Entry } = {}
 
@@ -320,9 +323,6 @@ local function addEntry(owner: Player)
 		chipLine.Parent = chip
 		table.insert(chips, chip)
 	end
-	local gold = cell(row, COLUMNS.gold, Size.Value, Font.Bold)
-	gold.TextXAlignment = Enum.TextXAlignment.Right
-	gold.TextColor3 = UiTheme.Gold
 
 	entries[owner] = {
 		owner = owner,
@@ -337,7 +337,6 @@ local function addEntry(owner: Player)
 		level = level,
 		kills = kills,
 		chips = chips,
-		gold = gold,
 	}
 end
 
@@ -352,6 +351,13 @@ end
 
 local function refreshEntry(entry: Entry)
 	local owner = entry.owner
+	-- Only the players in this battle (not those waiting in the lobby).
+	local inBattle = owner:GetAttribute("InParty") == true
+	entry.partyItem.Visible = inBattle
+	entry.row.Visible = inBattle
+	if not inBattle then
+		return
+	end
 	local character = owner.Character
 	local level = math.max(math.floor(readNumber(owner, "Level")), 1)
 	local health = if character then readNumber(character, "Health") else 0
@@ -392,7 +398,6 @@ local function refreshEntry(entry: Entry)
 	entry.class.Text = if type(heroName) == "string" then heroName else Hero.Name
 	entry.level.Text = tostring(level)
 	entry.kills.Text = tostring(math.floor(readNumber(owner, "Kills")))
-	entry.gold.Text = tostring(math.floor(readNumber(owner, "Gold")))
 	local taken = picked(owner)
 	for index, chip in entry.chips do
 		local info = taken[index]
@@ -432,7 +437,7 @@ local function setBoard(open: boolean)
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if input.KeyCode == Enum.KeyCode.Tab and not gameProcessed then
+	if input.KeyCode == Enum.KeyCode.Tab and not gameProcessed and GameContext.is("Battle") then
 		setBoard(true)
 	end
 end)
@@ -442,9 +447,10 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
-task.spawn(function()
-	while true do
-		refreshAll()
-		task.wait(REFRESH_SECONDS)
+GameContext.every("Battle", REFRESH_SECONDS, refreshAll)
+-- Back in the lobby: close the board (Tab may still be held).
+GameContext.during("Battle", function()
+	return function()
+		setBoard(false)
 	end
 end)

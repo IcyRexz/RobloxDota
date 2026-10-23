@@ -44,6 +44,7 @@ local Workspace = game:GetService("Workspace")
 
 local CombatService = require(script.Parent.CombatService)
 local HeroProgress = require(script.Parent.HeroProgress)
+local Match = require(script.Parent.Match)
 local Config = require(ReplicatedStorage.Shared.Config)
 local MageAbilities = require(ReplicatedStorage.Shared.MageAbilities)
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
@@ -172,8 +173,8 @@ local function readyFor(player: Player, action: string, time: number): (Model?, 
 	if not (character and typeof(team) == "string" and character:GetAttribute("Kind") == "Hero") then
 		return nil, nil
 	end
-	if not CombatService.isAlive(character) then
-		return nil, nil
+	if not CombatService.isAlive(character) or not (Match.isFighting() and Match.inParty(player)) then
+		return nil, nil -- attacks and abilities only in a running fight (T05: not in the lobby; T10: not after the result)
 	end
 	local readyAt = character:GetAttribute(action .. "ReadyAt")
 	if typeof(readyAt) == "number" and time < readyAt then

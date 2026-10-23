@@ -15,8 +15,8 @@
 --  * Army buffs from heroes (Storm Banner, War Drums, Fortify) are set by
 --    HeroProgress through BaseUpgrades.setArmy and added to every soldier.
 --  * Everything bought is shared by our whole side (every player is a
---    Defender) and lasts for one match: BaseUpgrades.reset() clears it (called
---    at server start; the match flow, T05, will call it per match).
+--    Defender) and lasts for one match: BaseUpgrades.reset() clears it (at
+--    server start and at every battlefield reset, Match.onReset).
 -- Published for the HUD/menu (display only), as ReplicatedStorage attributes:
 --   Owned<UpgradeId> (true once bought); <CategoryId>Label ("2/6");
 --   ArmyHealth, ArmyDamage, ArmyAttackSpeed (the current army buff shares).
@@ -35,6 +35,7 @@ local Workspace = game:GetService("Workspace")
 
 local CombatService = require(script.Parent.CombatService)
 local Gold = require(script.Parent.Gold)
+local Match = require(script.Parent.Match)
 local BaseUpgradeRules = require(ReplicatedStorage.Shared.BaseUpgradeRules)
 local Config = require(ReplicatedStorage.Shared.Config)
 
@@ -200,5 +201,8 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 BaseUpgrades.reset()
+-- Each battlefield reset (T15) clears them again, after Structures.server has
+-- put the buildings back.
+Match.onReset(20, "BaseUpgrades", BaseUpgrades.reset)
 
 return BaseUpgrades

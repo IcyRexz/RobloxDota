@@ -4,10 +4,12 @@
 -- buttons, right-aligned under the counter:
 --   TOOLS  Hide / Show                 (minimises the panel to this row)
 --   DEV    +30 XP  +200 Gold          (amounts from Config.Dev)
---   SPAWN  Zombie Brute Spitter Swordsman Archer   (Config.Dev.SpawnKinds)
+--   SPAWN  Zombie Brute Spitter Ripper Swordsman Archer   (Config.Dev.SpawnKinds)
 --   EVENT  Next  Zombie Nest  Zombie Surge  ...    (any event, Config.Events.List)
 --   ARRIVE Brutes  Spitters            (arrivals now, Config.Events.Arrivals)
 --   HERO   Die
+--   MATCH  Win  Lose                   (destroys a core: ends the match, T10)
+-- It starts folded to the TOOLS row (owner 2026-10-23); Show opens it.
 -- The camera locks the mouse in first person, so ` (backquote) frees it for
 -- clicking the panel (a Modal button) and locks it again. Shown only in
 -- Studio; each click asks the server (DevTools.server), which decides.
@@ -18,6 +20,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 if not RunService:IsStudio() then
@@ -32,7 +35,7 @@ local MOUSE_KEY = Enum.KeyCode.Backquote
 local function topOffset(): number
 	return space(3) + space(8) * UiTheme.Scale * UiTheme.screenFactor() + space(2)
 end
-local ZOMBIE_KINDS = { Zombie = true, Brute = true, Spitter = true }
+local ZOMBIE_KINDS = { Zombie = true, Brute = true, Spitter = true, Ripper = true }
 local KIND_LABELS: { [string]: string } = { Melee = "Swordsman" }
 
 local player = Players.LocalPlayer
@@ -43,6 +46,7 @@ screen.Name = "DevPanel"
 screen.ResetOnSpawn = false
 screen.IgnoreGuiInset = true -- lines up with the Gold counter
 screen.Parent = player:WaitForChild("PlayerGui")
+GameContext.showIn(screen, "Battle") -- battle UI: hidden in the lobby
 
 local panel = UiTheme.panel(screen)
 panel.Name = "Panel"
@@ -147,19 +151,28 @@ end
 local heroRow = row(5, "HERO")
 button(heroRow, 1, "Die", UiTheme.Enemy, "Die")
 
+local matchRow = row(6, "MATCH")
+button(matchRow, 1, "Win", UiTheme.Gold, "Win")
+button(matchRow, 2, "Lose", UiTheme.Enemy, "Lose")
+
 local hint = UiTheme.text(panel, UiTheme.TextSize.Caption, UiTheme.Font.Medium, UiTheme.Strength.Faint)
-hint.LayoutOrder = 6
+hint.LayoutOrder = 7
 
 -- Minimise (owner 2026-10-23): Hide folds the panel down to its top row.
+-- It starts folded (owner 2026-10-23).
 local toolsRow = row(0, "TOOLS")
-local toggle = button(toolsRow, 1, "Hide", UiTheme.Text)
-local folded: { GuiObject } = { devRow, spawnRow, eventRow, arriveRow, heroRow, hint }
-toggle.Activated:Connect(function()
-	local hide = toggle.Text == "Hide"
+local toggle = button(toolsRow, 1, "Show", UiTheme.Text)
+-- The mouse hint stays visible: the mouse must be freed to click Show.
+local folded: { GuiObject } = { devRow, spawnRow, eventRow, arriveRow, heroRow, matchRow }
+local function setFolded(fold: boolean)
 	for _, item in folded do
-		item.Visible = not hide
+		item.Visible = not fold
 	end
-	toggle.Text = if hide then "Show" else "Hide"
+	toggle.Text = if fold then "Show" else "Hide"
+end
+setFolded(true)
+toggle.Activated:Connect(function()
+	setFolded(toggle.Text == "Hide")
 end)
 hint.Size = UDim2.fromOffset(0, space(4))
 hint.AutomaticSize = Enum.AutomaticSize.X
@@ -178,11 +191,18 @@ freer.Size = UDim2.fromOffset(0, 0)
 freer.Parent = screen
 
 UserInputService.InputBegan:Connect(function(input, processed)
-	if processed or input.KeyCode ~= MOUSE_KEY then
+	if processed or input.KeyCode ~= MOUSE_KEY or not GameContext.is("Battle") then
 		return
 	end
 	local free = not freer.Visible
 	freer.Visible = free
 	UserInputService.MouseIconEnabled = free
 	hint.Text = if free then "` to lock the mouse again" else "` to use the mouse"
+end)
+-- Leaving the battle locks it again, so the next fight starts locked.
+GameContext.during("Battle", function()
+	return function()
+		freer.Visible = false
+		hint.Text = "` to use the mouse"
+	end
 end)

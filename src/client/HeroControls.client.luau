@@ -27,6 +27,7 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local GroundRing = require(ReplicatedStorage.Shared.GroundRing)
 local MageAbilities = require(ReplicatedStorage.Shared.MageAbilities)
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
@@ -420,21 +421,26 @@ local function shoot(character: Model)
 	actionEvent:FireServer("Pulse", direction)
 end
 
-RunService.RenderStepped:Connect(function(deltaTime)
+-- Clears the marker, ability areas and held keys (hero down, or back in the lobby).
+local function clearAim()
+	assistTarget, assistPoint = nil, nil
+	aiming = nil
+	table.clear(held)
+	drawMarker(nil, false, 0)
+	drawAreas(nil, nil)
+	if player:GetAttribute("AimTarget") then
+		player:SetAttribute("AimTarget", false)
+	end
+	aimValue.Value = nil
+end
+
+local function step(deltaTime: number)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local root = character and Targeting.rootOf(character)
 	-- Down heroes (Health attribute 0) keep a living Humanoid, so the attribute decides.
 	if not (character and humanoid and root and isAlive(character)) then
-		assistTarget, assistPoint = nil, nil
-		aiming = nil
-		table.clear(held)
-		drawMarker(nil, false, deltaTime)
-		drawAreas(nil, nil)
-		if player:GetAttribute("AimTarget") then
-			player:SetAttribute("AimTarget", false)
-		end
-		aimValue.Value = nil
+		clearAim()
 		return
 	end
 	updateAssist(character, root)
@@ -454,6 +460,16 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	if holding > 0 then
 		shoot(character)
 	end
+end
+
+-- Aiming runs only in the battle; leaving it lets go of everything held.
+GameContext.during("Battle", function()
+	local connection = RunService.RenderStepped:Connect(step)
+	return function()
+		connection:Disconnect()
+		holding = 0
+		clearAim()
+	end
 end)
 
 -- Input --------------------------------------------------------------------------
@@ -471,8 +487,8 @@ local function release()
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then
-		return
+	if gameProcessed or not GameContext.is("Battle") then
+		return -- no attacks or abilities in the lobby
 	end
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		press()

@@ -11,7 +11,7 @@ This is the implementation target for the co-op base-defense shooter. Nothing li
 - EnemyService: waves, AI, cap, cleanup. (`src/server/Minions.server.luau`)
 - BuildService: build nodes, placing, repair, Gold spending. (new; tower AI from `src/server/Structures.server.luau`, art from `TowerVisuals.server.luau`)
 - EconomyService: Gold balances (in-match). (new)
-- ProfileService (own module, not the community library unless the owner approves): DataStore load/save of credits, hero levels/XP, items, loadouts. (new)
+- PlayerData (`src/server/PlayerData.server.luau`, 2026-10-23: saved stats with session lock, retries, BindToClose; credits, levels and gear join it with T20). Was planned as ProfileService (own module, not the community library unless the owner approves): DataStore load/save of credits, hero levels/XP, items, loadouts. (new)
 
 **Client** controllers: Input/Controls, Camera, HUD, Effects, Hub UI, Build UI. Clients may predict indicators but never decide damage, kills, Gold, credits, building, wave state or results.
 
@@ -31,6 +31,7 @@ Server -> client: state snapshot (phase, wave, timer end in server time, core he
 
 ## Correctness rules
 - Every delayed callback captures the mission epoch and character generation and rechecks them before acting.
+- The battlefield reset (T15): each system that holds battle state registers a step with `Match.onReset(order, name, fn)`; Match runs them in order once nobody is in the battle (structures 10, base upgrades 20, units and flow fields 30, events 40, Gold / levels / revives 50).
 - Results and death handling are idempotent; one committed result per epoch.
 - No health, Gold or credit change bypasses its service.
 - Cooldowns use server time; clients show them from `<Action>ReadyAt` attributes.

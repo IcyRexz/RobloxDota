@@ -38,6 +38,7 @@ local UnitEffects = require(script.Parent.UnitEffects)
 local Config = require(ReplicatedStorage.Shared.Config)
 local JointPose = require(ReplicatedStorage.Shared.JointPose)
 local Targeting = require(ReplicatedStorage.Shared.Targeting)
+local Match = require(script.Parent.Match)
 local UnitRequests = require(script.Parent.UnitRequests)
 local ZombieEvents = require(script.Parent.ZombieEvents)
 local Landscape = require(script.Parent.Landscape)
@@ -87,6 +88,8 @@ local ZOMBIE_LOOKS: { [string]: ZombieLook } = {
 	Brute = { skin = Color3.fromRGB(46, 62, 38), shirt = Color3.fromRGB(48, 14, 14), legs = Color3.fromRGB(32, 35, 26) },
 	-- sickly yellow-green, with a glowing acid mouth
 	Spitter = { skin = Color3.fromRGB(132, 160, 62), shirt = Color3.fromRGB(86, 96, 34), legs = Color3.fromRGB(62, 70, 48) },
+	-- ashen grey skin, a near-black rag of a shirt (small, long limbs, bone claws)
+	Ripper = { skin = Color3.fromRGB(118, 122, 108), shirt = Color3.fromRGB(36, 38, 46), legs = Color3.fromRGB(40, 38, 34) },
 }
 local ZOMBIE_EYES = Color3.fromRGB(255, 40, 30)
 local EYE_HEIGHT = 0.12 -- eyes this share of the head's height above its centre
@@ -98,7 +101,9 @@ local SKIN_MATERIALS: { [string]: Enum.Material } = {
 	Zombie = Enum.Material.Concrete,
 	Brute = Enum.Material.Slate, -- rough hide
 	Spitter = Enum.Material.Concrete,
+	Ripper = Enum.Material.Concrete,
 }
+local BONE = Color3.fromRGB(222, 212, 186)
 local BLOOD = Color3.fromRGB(88, 10, 10)
 local SCAR = Color3.fromRGB(176, 150, 128)
 local PUS = Color3.fromRGB(200, 214, 70)
@@ -279,6 +284,8 @@ end
 --    shirts: owner 2026-10-23, they read as green patches.)
 --  * Spitter: yellow pustules on head, arms and chest, green acid stains down
 --    the shirt, acid dripping from the mouth.
+--  * Ripper: three claw slashes torn across the shirt, blood on both forearms
+--    and the mouth (its bone claws are added by addClaws).
 local function addWear(body: Model, look: ZombieLook, kind: string)
 	setMaterial(body, SKIN_PARTS, SKIN_MATERIALS[kind] or Enum.Material.Concrete)
 	setMaterial(body, CLOTH_PARTS, CLOTH_MATERIAL)
@@ -304,6 +311,13 @@ local function addWear(body: Model, look: ZombieLook, kind: string)
 		detailOn(body, "LeftLowerArm", pustule, PUS, 0.1, 0.2, 45)
 		detailOn(body, "RightUpperArm", pustule, PUS, -0.15, 0, 45)
 		detailOn(body, "Head", Vector2.new(0.08, 0.35), ACID_COLOR, 0.05, -0.5) -- acid drip
+	elseif kind == "Ripper" then
+		for _, x in { -0.3, 0, 0.3 } do
+			detailOn(body, "UpperTorso", Vector2.new(0.08, 1.1), darker(look.shirt, 0.4), x, 0, 25) -- claw slashes
+		end
+		detailOn(body, "LeftLowerArm", Vector2.new(0.3, 0.4), BLOOD, 0, -0.1)
+		detailOn(body, "RightLowerArm", Vector2.new(0.3, 0.4), BLOOD, 0, -0.1)
+		detailOn(body, "Head", Vector2.new(0.3, 0.1), BLOOD, 0, -0.35) -- bloody mouth
 	else
 		detailOn(body, "UpperTorso", Vector2.new(0.12, 0.8), BLOOD, -0.45, 0.05)
 		detailOn(body, "UpperTorso", Vector2.new(0.09, 0.55), BLOOD, -0.25, 0.2)
@@ -358,6 +372,20 @@ local function addBow(body: Model)
 	addWeaponPart(hand, Vector3.new(0.15, 0.15, 1.3), wood, CFrame.new(0, 0.02, -1.01) * CFrame.Angles(bend, 0, 0)) -- upper limb
 	addWeaponPart(hand, Vector3.new(0.15, 0.15, 1.3), wood, CFrame.new(0, 0.02, 1.01) * CFrame.Angles(-bend, 0, 0)) -- lower limb
 	addWeaponPart(hand, Vector3.new(0.05, 0.05, 3.24), Color3.fromRGB(230, 230, 230), CFrame.new(0, 0.26, 0)) -- string
+end
+
+-- Ripper: three long bone claws out of the end of each hand, along the hand's
+-- -Y axis (down the arm, so they point forward when the arms are raised).
+local function addClaws(body: Model)
+	for _, name in { "LeftHand", "RightHand" } do
+		local hand = bodyPart(body, name)
+		if hand then
+			local length = 0.9
+			for _, x in { -0.18, 0, 0.18 } do
+				addWeaponPart(hand, Vector3.new(0.08, length, 0.08), BONE, CFrame.new(x, -hand.Size.Y / 2 - length / 2 + 0.1, 0))
+			end
+		end
+	end
 end
 
 -- A small glowing ball welded to the front of the head (eyes, acid mouth).
@@ -431,6 +459,9 @@ local function buildTemplate(team: string, stats: MinionStats): Model
 	description.RightArmColor = if zombie then look.skin else color
 	description.LeftLegColor = if zombie then look.legs else color
 	description.RightLegColor = if zombie then look.legs else color
+	-- Longer limbs use Roblox's own body-type scaling (the Rthro proportions:
+	-- longer arms and legs, a slimmer build), so the joints still line up.
+	description.BodyTypeScale = stats.limbs or 0
 	local body = Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
 	body.Name = team .. stats.kind
 	-- Remove any built-in scripts (such as the default Animate script) so only
@@ -443,6 +474,9 @@ local function buildTemplate(team: string, stats: MinionStats): Model
 	if zombie then
 		makeZombie(body, stats.kind)
 		addWear(body, look, stats.kind)
+		if stats.kind == "Ripper" then
+			addClaws(body)
+		end
 	elseif stats.kind == "Archer" then
 		addBow(body)
 		addUniform(body, stats.kind)
@@ -837,30 +871,36 @@ local function spawnGroup(spawnPoint: SpawnPoint, group: { MinionStats })
 	end
 end
 
--- A zombie group slot: maybe a variant (ZombieVariants chances, in order),
--- once that variant has arrived (ZombieEvents.hasArrived).
-local function rollVariant(stats: MinionStats): MinionStats
-	local roll = math.random()
-	for _, variant in MinionConfig.ZombieVariants do
-		if roll < variant.chance then
-			if not ZombieEvents.hasArrived(variant.stats.kind) then
-				return stats
+-- A zombie group with its variants added (owner 2026-10-23: variants come
+-- along with the zombies, never instead of them): one roll per unit in the
+-- group (ZombieVariants chances, in order) may add one variant, once that
+-- variant has arrived (ZombieEvents.hasArrived).
+local function withVariants(group: { MinionStats }): { MinionStats }
+	local full = table.clone(group)
+	for _ = 1, #group do
+		local roll = math.random()
+		for _, variant in MinionConfig.ZombieVariants do
+			if roll < variant.chance then
+				if ZombieEvents.hasArrived(variant.stats.kind) then
+					table.insert(full, variant.stats)
+				end
+				break
 			end
-			return variant.stats
+			roll -= variant.chance
 		end
-		roll -= variant.chance
 	end
-	return stats
+	return full
 end
 
 -- Every standing spawn marker of a team sends its group; our barracks add
 -- their Reinforcements upgrades, zombie slots may become variants.
 local function spawnTeam(team: string)
+	if not Match.isFighting() then
+		return -- units spawn only during a fight (T05; nothing after the result, T10)
+	end
 	local group: { MinionStats } = table.clone(MinionConfig.Groups[team] or {})
 	if team == ZOMBIES then
-		for index, stats in group do
-			group[index] = rollVariant(stats)
-		end
+		group = withVariants(group)
 	elseif team == DEFENDERS then
 		for _, extra in { MinionConfig.Melee, MinionConfig.Archer } do
 			for _ = 1, BaseUpgrades.unitMods(DEFENDERS, extra.kind).extraPerGroup do
@@ -1218,7 +1258,14 @@ local function attack(minion: Minion, target: Instance, aimPoint: Vector3, now: 
 			-- down. A zombie killed mid-swing never lands it.
 			-- The target must still be within reach when the claw lands, so a
 			-- player who steps back during the swing dodges it.
-			local hitDelay = if minion.stats.kind == "Brute" then MinionConfig.BruteSmashHitDelay else MinionConfig.ZombieSwipeHitDelay
+			-- Ripper: its claw lands as it crosses the middle (RipperSwipeLook).
+			local hitDelay = MinionConfig.ZombieSwipeHitDelay
+			if minion.stats.kind == "Brute" then
+				hitDelay = MinionConfig.BruteSmashHitDelay
+			elseif minion.stats.kind == "Ripper" then
+				local look = MinionConfig.RipperSwipeLook
+				hitDelay = look.windup + look.sweep / 2
+			end
 			local damage = minion.stats.damage
 			local team, zombie, zombieRoot = minion.team, minion.model, minion.root
 			local knockback = minion.stats.knockback
@@ -1391,6 +1438,12 @@ end
 
 local function updateMinion(minion: Minion, now: number)
 	local position = minion.root.Position
+	-- Match over (T10): everyone stands still where they are.
+	if Match.isOver() then
+		minion.humanoid:MoveTo(position)
+		setWalking(minion, false)
+		return
+	end
 	-- Stunned (or flying from a knockback): stand still, no attacks.
 	if UnitEffects.isStunned(minion.model) then
 		minion.humanoid:MoveTo(position)
@@ -1511,12 +1564,8 @@ ZombieEvents.NestCreated:Connect(function(nest: BasePart)
 	}
 	local group = table.create(NestConfig.GroupSize, MinionConfig.Zombie)
 	task.spawn(function()
-		while CombatService.isAlive(nest) do
-			local rolled: { MinionStats } = {}
-			for index, stats in group do
-				rolled[index] = rollVariant(stats)
-			end
-			spawnGroup(spawnPoint, rolled)
+		while CombatService.isAlive(nest) and Match.isFighting() do
+			spawnGroup(spawnPoint, withVariants(group))
 			task.wait(NestConfig.GroupInterval / ZombieEvents.productionFactor("Nest"))
 		end
 	end)
@@ -1529,12 +1578,9 @@ ZombieEvents.BurstRequested:Connect(function(count: number)
 		if spawnPoint.team == ZOMBIES and spawnPoint.source and CombatService.isAlive(spawnPoint.source) then
 			local left = count
 			while left > 0 do
-				local group: { MinionStats } = {}
-				for index = 1, math.min(BURST_GROUP_SIZE, left) do
-					group[index] = rollVariant(MinionConfig.Zombie)
-				end
-				spawnGroup(spawnPoint, group)
-				left -= #group
+				local size = math.min(BURST_GROUP_SIZE, left)
+				spawnGroup(spawnPoint, withVariants(table.create(size, MinionConfig.Zombie)))
+				left -= size
 			end
 		end
 	end
@@ -1590,9 +1636,34 @@ local UNITS_BY_KIND: { [string]: MinionStats } = {
 	Zombie = MinionConfig.Zombie,
 	Brute = MinionConfig.Brute,
 	Spitter = MinionConfig.Spitter,
+	Ripper = MinionConfig.Ripper,
 	Melee = MinionConfig.Melee,
 	Archer = MinionConfig.Archer,
 }
+-- The battlefield reset (T15, after Structures.server has put the fallen
+-- structures back): every unit is removed, nests are forgotten and the flow
+-- fields are rebuilt around the standing structures.
+Match.onReset(30, "Minions", function()
+	for _, minion in alive do
+		minion.model:Destroy()
+	end
+	table.clear(alive)
+	table.clear(byModel)
+	for _, leftover in minionFolder:GetChildren() do
+		leftover:Destroy()
+	end
+	local function withoutNests(list: { BasePart })
+		for index = #list, 1, -1 do
+			if list[index]:GetAttribute("Kind") == "Nest" then
+				table.remove(list, index)
+			end
+		end
+	end
+	withoutNests(structures)
+	withoutNests(cores[ZOMBIES] or {})
+	SwarmField.rebuild()
+end)
+
 UnitRequests.SpawnRequested:Connect(function(team: string, kind: string, position: Vector3)
 	local stats = UNITS_BY_KIND[kind]
 	if not stats or (team ~= DEFENDERS and team ~= ZOMBIES) or not templates[team .. stats.kind] then

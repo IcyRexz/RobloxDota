@@ -109,8 +109,9 @@ for _, item in arena:GetDescendants() do
 		createBar(item)
 	end
 end
--- Structures added mid-match (zombie nests, placed straight into the Arena).
-arena.ChildAdded:Connect(function(item: Instance)
+-- Structures added later: zombie nests, and fallen structures put back by the
+-- battlefield reset (T15; they arrive as new parts).
+arena.DescendantAdded:Connect(function(item: Instance)
 	if item:IsA("BasePart") and Targeting.StructureKinds[item:GetAttribute("Kind")] then
 		createBar(item)
 	end

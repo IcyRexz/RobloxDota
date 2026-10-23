@@ -5,7 +5,8 @@
 --    Config.Display.HealthBarRange of your hero
 --  * the archer's bow-draw pose and the flying arrow
 --  * the zombie's hand swipe (arm rears up, claws down, body lunges in); the
---    Brute instead smashes down with both hands
+--    Brute instead smashes down with both hands; the Ripper twists and
+--    claws down with one hand, the other hand on its next attack
 --  * the spitter's acid blob (lobbed onto a spot) and the green puddle it leaves
 -- Display only. The server owns minion health and decides every hit; the arrow,
 -- the swipe and the acid just show a hit the server has already scheduled.
@@ -50,6 +51,13 @@ local SWIPE_RECOVER_TIME = 0.3
 -- animation, a rotation is added to each shoulder's Transform
 -- (JointPose.addRotation), so the animation cannot hide it. Angles and timing
 -- in Config.Minion.BruteSmashLook; the hit delay comes from the server.
+-- Ripper swipe (owner 2026-10-23), same pattern, hands taking turns: the
+-- upper body twists back to the striking arm's side with that arm raised,
+-- then the claw comes down as the body turns through the middle to the
+-- other side, and it settles. Right hand (twisting left), then left hand
+-- (twisting right), and so on.
+-- Angles and timing in Config.Minion.RipperSwipeLook (the server lands each
+-- claw from the same numbers).
 
 local ACID_COLOR = Color3.fromRGB(50, 140, 35) -- a world effect; owner 2026-10-22: darker acid green (same as the spitter's mouth, Minions.server)
 local ACID_ARC = 0.25 -- peak height of the blob's lob, as a share of its length
@@ -297,6 +305,10 @@ local swipeCounts: { [Model]: number } = {}
 -- Brute smashes in progress (see playBruteSmash).
 type ArmSwing = { shoulders: { Instance }, started: number, raiseTime: number, slamTime: number }
 local armSwings: { [Model]: ArmSwing } = {}
+-- Ripper swipes in progress (see playRipperSwipe): the waist, the striking
+-- shoulder and which way the body turns (1 toward its left, -1 its right).
+type RipperSwipe = { waists: { Instance }, shoulders: { Instance }, turn: number, started: number }
+local ripperSwipes: { [Model]: RipperSwipe } = {}
 local loggedFirstSwipe = false
 
 -- A removed minion's bar, poses and swipe count are forgotten (one cleanup for all).
@@ -304,6 +316,7 @@ minionFolder.ChildRemoved:Connect(function(child)
 	if child:IsA("Model") then
 		bars[child] = nil
 		armSwings[child] = nil
+		ripperSwipes[child] = nil
 		posedJoints[child] = nil
 		swipeCounts[child] = nil
 	end
@@ -388,8 +401,73 @@ local function smashAngle(swing: ArmSwing, t: number): number?
 	return nil
 end
 
+local function playRipperSwipe(ripper: Model)
+	-- Hands take turns: right first.
+	local count = (swipeCounts[ripper] or 0) + 1
+	swipeCounts[ripper] = count
+	local right = count % 2 == 1
+	ripperSwipes[ripper] = {
+		waists = JointPose.animated(ripper, "Waist"),
+		shoulders = JointPose.animated(ripper, if right then "RightShoulder" else "LeftShoulder"),
+		turn = if right then 1 else -1,
+		started = os.clock(),
+	}
+end
+
+-- A swipe's key poses, in degrees: { time, twist, arm lift }, for a right-hand
+-- swipe (a left-hand one mirrors the twist). Twist turns about the torso's up
+-- axis (positive turns toward the Ripper's left); lift raises the arm forward
+-- and up (negative claws it down). The claw crosses the middle halfway
+-- through the sweep, when the hit lands.
+type SwipeKey = { number }
+local function ripperKeys(): { SwipeKey }
+	local look = Config.Minion.RipperSwipeLook
+	local t = look.twist
+	local sweepEnd = look.windup + look.sweep
+	return {
+		{ 0, 0, 0 },
+		{ look.windup, -t, look.raiseAngle }, -- turned right, arm raised
+		{ sweepEnd, t, -look.strikeAngle }, -- turned left, claw down across the middle
+		{ sweepEnd + look.recover, 0, 0 },
+	}
+end
+local RIPPER_KEYS = ripperKeys()
+
+-- The swipe's pose at time t, or nil once it is over.
+local function ripperPose(t: number): SwipeKey?
+	for index = 2, #RIPPER_KEYS do
+		local from, to = RIPPER_KEYS[index - 1], RIPPER_KEYS[index]
+		if t < to[1] then
+			local alpha = ease((t - from[1]) / (to[1] - from[1]))
+			local pose = {}
+			for column = 2, #from do
+				pose[column] = from[column] + (to[column] - from[column]) * alpha
+			end
+			return pose
+		end
+	end
+	return nil
+end
+
+local function rotateAll(joints: { Instance }, rotation: CFrame)
+	for _, item in joints do
+		if item.Parent then
+			JointPose.addRotation(item, rotation)
+		end
+	end
+end
+
 RunService.PreSimulation:Connect(function()
 	local now = os.clock()
+	for ripper, swipe in ripperSwipes do
+		local pose = ripperPose(now - swipe.started)
+		if not pose or ripper.Parent ~= minionFolder then
+			ripperSwipes[ripper] = nil
+		else
+			rotateAll(swipe.waists, CFrame.Angles(0, math.rad(pose[2] * swipe.turn), 0))
+			rotateAll(swipe.shoulders, CFrame.Angles(math.rad(pose[3]), 0, 0))
+		end
+	end
 	for brute, swing in armSwings do
 		local t = now - swing.started
 		local angle = smashAngle(swing, t)
@@ -413,8 +491,11 @@ swingEvent.OnClientEvent:Connect(function(zombie: unknown, hitDelay: unknown)
 	if not (type(hitDelay) == "number" and hitDelay == hitDelay and hitDelay > 0 and hitDelay <= MAX_SWING_TIME) then
 		return
 	end
-	if zombie:GetAttribute("MinionType") == "Brute" then
+	local kind = zombie:GetAttribute("MinionType")
+	if kind == "Brute" then
 		playBruteSmash(zombie, hitDelay)
+	elseif kind == "Ripper" then
+		playRipperSwipe(zombie)
 	else
 		playSwipe(zombie, hitDelay)
 	end

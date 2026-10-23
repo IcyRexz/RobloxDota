@@ -13,10 +13,10 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local MAP_SIZE = 200 -- on-screen pixels, longest side
@@ -69,6 +69,7 @@ local screen = Instance.new("ScreenGui")
 screen.Name = "Minimap"
 screen.ResetOnSpawn = false
 screen.Parent = playerGui
+GameContext.showIn(screen, "Battle") -- battle UI: hidden in the lobby
 
 -- The map sits in a standard HUD surface panel (UI design system).
 local holder = UiTheme.panel(screen)
@@ -154,9 +155,10 @@ end
 for _, item in arena:GetDescendants() do
 	addStructure(item)
 end
--- Structures added mid-match (zombie nests). Attributes are set before the
--- server parents the part, so they are there when it arrives.
-arena.ChildAdded:Connect(addStructure)
+-- Structures added later (zombie nests, and fallen structures put back by the
+-- battlefield reset, T15). Attributes are set before the server parents the
+-- part, so they are there when it arrives.
+arena.DescendantAdded:Connect(addStructure)
 
 -- Unit and hero dots: a reused pool, repositioned on a short timer.
 local dotPool: { Frame } = {}
@@ -256,7 +258,7 @@ local function updateDots()
 end
 
 -- Own marker every frame (cheap, and it keeps the facing tick smooth).
-RunService.RenderStepped:Connect(function()
+GameContext.renderStepped("Battle", function()
 	local character = player.Character
 	local root = character and rootOf(character)
 	if not (root and character and isAlive(character)) then
@@ -270,9 +272,4 @@ RunService.RenderStepped:Connect(function()
 	selfMarker.Rotation = math.deg(math.atan2(look.Z, look.X))
 end)
 
-task.spawn(function()
-	while true do
-		updateDots()
-		task.wait(DOT_UPDATE_SECONDS)
-	end
-end)
+GameContext.every("Battle", DOT_UPDATE_SECONDS, updateDots)

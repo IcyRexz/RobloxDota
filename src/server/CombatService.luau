@@ -59,7 +59,8 @@ end
 -- Deals damage from an attacker to a target. attackerTeam is captured by the
 -- caller when the attack starts, so a delayed hit still knows its side.
 -- Returns the damage actually dealt (0 if the hit was refused: bad amount,
--- same team, already dead or spawn-protected). Every structure can be hit at
+-- same team, already dead, spawn-protected or the match is over: Match.luau
+-- sets the Workspace attribute MatchResult and no damage lands after it). Every structure can be hit at
 -- any time (owner 2026-10-23: the tower -> barracks -> core lock is gone).
 function CombatService.applyDamage(target: Instance, amount: number, attacker: Instance, attackerTeam: string): number
 	if not isValidAmount(amount) then
@@ -68,7 +69,7 @@ function CombatService.applyDamage(target: Instance, amount: number, attacker: I
 	if target:GetAttribute("Team") == attackerTeam then
 		return 0
 	end
-	if not CombatService.isAlive(target) or isProtected(target) then
+	if not CombatService.isAlive(target) or isProtected(target) or Workspace:GetAttribute("MatchResult") ~= nil then
 		return 0
 	end
 

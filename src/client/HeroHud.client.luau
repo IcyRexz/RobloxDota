@@ -21,12 +21,12 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local MageAbilities = require(ReplicatedStorage.Shared.MageAbilities)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
@@ -119,6 +119,7 @@ local screen = Instance.new("ScreenGui")
 screen.Name = "HeroHud"
 screen.ResetOnSpawn = false
 screen.Parent = playerGui
+GameContext.showIn(screen, "Battle") -- battle UI: hidden in the lobby
 
 local BLOCK_X = RING_SIZE + space(4)
 local XP_Y = HEALTH_HEIGHT + space(2)
@@ -429,7 +430,7 @@ end
 
 -- Cooldown sweeps follow the server's <Action>ReadyAt (server time) and
 -- <Action>Cooldown (the full length, which masteries can change) attributes.
-RunService.RenderStepped:Connect(function()
+GameContext.renderStepped("Battle", function()
 	local character = player.Character
 	local time = Workspace:GetServerTimeNow()
 	refreshPassive(character)

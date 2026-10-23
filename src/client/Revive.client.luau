@@ -10,8 +10,8 @@
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
+local GameContext = require(ReplicatedStorage.Shared.GameContext)
 local UiTheme = require(ReplicatedStorage.Shared.UiTheme)
 
 local Font = UiTheme.Font
@@ -103,7 +103,7 @@ ProximityPromptService.PromptButtonHoldEnded:Connect(function(prompt)
 	end
 end)
 
-RunService.RenderStepped:Connect(function()
+GameContext.renderStepped("Battle", function()
 	for prompt, entry in shown do
 		if not prompt.Parent or player:GetAttribute("Down") == true then
 			hide(prompt)

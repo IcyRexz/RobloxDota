@@ -13,6 +13,7 @@ export type MinionStats = {
 	speed: number, -- movement speed (studs per second)
 	aggroRange: number, -- notices and attacks enemies this close (studs)
 	scale: number?, -- body size relative to a normal unit (default 1)
+	limbs: number?, -- limb length: 0 = classic blocky proportions (default), 1 = Roblox's longest built-in limbs
 	knockback: number?, -- each hit throws one of our soldiers back at this speed (studs/s)
 	splashRadius: number?, -- ranged zombie: its acid hurts everything of ours this close to where it lands
 }
@@ -128,6 +129,24 @@ local SPITTER: MinionStats = table.freeze({
 	splashRadius = 6,
 })
 
+-- Ripper (owner 2026-10-23: "smaller, limbs extended slightly, fast and hits
+-- hard"): a small, long-limbed zombie that runs nearly as fast as a hero and
+-- claws harder than a Brute, but is frail. Each attack is one swipe, hands
+-- taking turns (Minion.RipperSwipeLook), two a second: 28 damage a second
+-- against a Brute's 24. Placeholder numbers. Joins the horde through an
+-- arrival like Brutes and Spitters (owner 2026-10-23).
+local RIPPER: MinionStats = table.freeze({
+	kind = "Ripper",
+	maxHealth = 80,
+	damage = 14, -- per swipe (owner 2026-10-23: was one hit of 26 a second)
+	attackRange = 5,
+	attackInterval = 0.5, -- one swipe each, hands taking turns
+	speed = 14,
+	aggroRange = 26,
+	scale = 0.75,
+	limbs = 0.6,
+})
+
 local Config = table.freeze({
 	-- The two sides (owner 2026-10-20): us and the zombies. These are the Team
 	-- attribute values on players, units and structures; there are no colour teams.
@@ -141,6 +160,9 @@ local Config = table.freeze({
 	-- see the health of anything you can hit.
 	Display = table.freeze({
 		HealthBarRange = 60,
+		-- "Base Core under attack" style popups (owner 2026-10-23): one per
+		-- building at most every UnderAttackCooldown seconds while it is hit.
+		UnderAttackCooldown = 20,
 	}),
 
 	-- Gold (T11, owner 2026-10-20): earned by landing the killing hit on a
@@ -151,10 +173,48 @@ local Config = table.freeze({
 	-- gets LastHitBonus. A destroyed Zombie Nest gives every player PerNest.
 	-- Rough rate: 50-70 Gold a minute per player. Upgrades are shared.
 	Gold = table.freeze({
-		PerDeath = table.freeze({ Zombie = 1, Spitter = 2, Brute = 4 }) :: { [string]: number },
+		PerDeath = table.freeze({ Zombie = 1, Spitter = 2, Ripper = 2, Brute = 4 }) :: { [string]: number },
 		LastHitBonus = 2,
 		PerNest = 40,
 		Starting = 0, -- was a temporary 1000 for testing; the dev panel adds Gold
+	}),
+
+	-- The lobby courtyard (T05, owner 2026-10-23; Lobby.luau, Match.luau).
+	-- Offsets are from Centre (x east toward the battlefield, z south).
+	Lobby = table.freeze({
+		Centre = Vector3.new(-290, 0, 0), -- west of our base, beyond the map's edge
+		-- Studs, x by z (owner 2026-10-23: enlarged from 80 x 60 for four pads).
+		Size = Vector2.new(110, 90),
+		-- The queue daises, in a row along the east side (owner 2026-10-23: four,
+		-- flush to one side). Each runs its own lobby room: E creates one, or
+		-- joins / leaves the open one.
+		Pads = table.freeze({
+			Vector3.new(36, 0, -30),
+			Vector3.new(36, 0, -10),
+			Vector3.new(36, 0, 10),
+			Vector3.new(36, 0, 30),
+		}),
+		QueueRadius = 6,
+		SpawnAt = Vector3.new(-25, 0, 0), -- players appear around here, facing the pads
+		CountdownSeconds = 10, -- an open lobby starts after this, full or not (owner 2026-10-23)
+		LoadingSeconds = 2.5, -- the loading screen going into a battle
+		ReturnLoadingSeconds = 1, -- the loading screen going back to the lobby
+		ResultsSeconds = 20, -- the results screen, then everyone returns to the lobby
+		-- A lobby's creator picks 1 to MaxBattlePlayers players (owner 2026-10-23: 1-4).
+		MaxBattlePlayers = 4,
+		-- Maps a lobby can pick, top one first (owner 2026-10-23). Only the one
+		-- battlefield exists; the name is a placeholder (owner may rename).
+		Maps = table.freeze({
+			table.freeze({ Id = "ZombieFields", Name = "Zombie Fields" }),
+		}) :: { { Id: string, Name: string } },
+	}),
+
+	-- Match rewards for meta progression (owner 2026-10-23): every player gets
+	-- ZombieCores when the match ends, win or lose (one placeholder number for
+	-- now). Shown on the end screen and added to the saved stats
+	-- (PlayerData.server); not yet spendable (T20).
+	Rewards = table.freeze({
+		ZombieCores = 50,
 	}),
 
 	-- Developer panel under the Gold counter (owner 2026-10-21). Studio only:
@@ -164,7 +224,7 @@ local Config = table.freeze({
 		Gold = 200,
 		-- Units the panel can spawn (MinionStats kinds), in button order. Zombies
 		-- appear ZombieDistance studs in front of you, our soldiers beside you.
-		SpawnKinds = table.freeze({ "Zombie", "Brute", "Spitter", "Melee", "Archer" }),
+		SpawnKinds = table.freeze({ "Zombie", "Brute", "Spitter", "Ripper", "Melee", "Archer" }),
 		ZombieDistance = 20,
 		SoldierDistance = 5,
 	}),
@@ -225,18 +285,21 @@ local Config = table.freeze({
 			Tries = 30,
 			GroupScatter = 4,
 		}),
-		-- One-time arrivals (owner 2026-10-23, Brutes at 3:00, Spitters at
-		-- 6:00; were 4:00 / 8:00): the match starts with plain
-		-- zombies only; each variant joins the zombie groups (and nest guards,
-		-- for Brutes) from `at` seconds after the match starts, announced once
+		-- One-time arrivals (owner 2026-10-23): the match starts with plain
+		-- zombies only; Brutes, Spitters and Rippers each join the zombie
+		-- groups (and nest guards, for Brutes) at one of ArrivalTimes (seconds
+		-- after the match starts), in a random order every match (owner
+		-- 2026-10-23: 3:00, 6:00 and 10:00, no fixed order), announced once
 		-- with a banner like the events. Not part of the random rotation.
 		Arrivals = table.freeze({
-			table.freeze({ id = "BruteArrival", kind = "Brute", at = 180, name = "The Brutes Arrive", text = "Huge Brutes now march with the horde" }),
-			table.freeze({ id = "SpitterArrival", kind = "Spitter", at = 360, name = "The Spitters Arrive", text = "Spitters now lob acid from range" }),
-		}) :: { { id: string, kind: string, at: number, name: string, text: string } },
+			table.freeze({ id = "BruteArrival", kind = "Brute", name = "The Brutes Arrive", text = "Huge Brutes now march with the horde" }),
+			table.freeze({ id = "SpitterArrival", kind = "Spitter", name = "The Spitters Arrive", text = "Spitters now lob acid from range" }),
+			table.freeze({ id = "RipperArrival", kind = "Ripper", name = "The Rippers Arrive", text = "Fast Rippers now hunt with the horde" }),
+		}) :: { { id: string, kind: string, name: string, text: string } },
+		ArrivalTimes = table.freeze({ 180, 360, 600 }) :: { number },
 		Nest = table.freeze({
 			Size = Vector3.new(10, 9, 10),
-			MaxHealth = 800,
+			MaxHealth = 1000, -- owner 2026-10-23: +25% (was 800)
 			-- Where it rises: this share of the way from our Base Core to the
 			-- Zombie Core, anywhere within HalfWidth studs of the middle line.
 			MinShare = 0.35,
@@ -383,7 +446,7 @@ local Config = table.freeze({
 		-- and level 25 lands near the end of a 15-20 minute match. Kept for
 		-- the session (death does not reset it).
 		Leveling = table.freeze({
-			XpPerDeath = table.freeze({ Zombie = 1, Spitter = 2, Brute = 3 }) :: { [string]: number },
+			XpPerDeath = table.freeze({ Zombie = 1, Spitter = 2, Ripper = 2, Brute = 3 }) :: { [string]: number },
 			FirstLevelXp = 20,
 			XpGrowth = 2,
 			MaxLevel = 25,
@@ -452,13 +515,17 @@ local Config = table.freeze({
 		Zombie = ZOMBIE,
 		Brute = BRUTE,
 		Spitter = SPITTER,
-		-- Each zombie in a group may instead be a variant: chance per slot,
-		-- rolled in this order (1 in 10 a Brute, owner 2026-10-23: 10%, then
-		-- 5%, back to 10% to see more of them; 1 in 7 a Spitter). A variant only appears once it has
-		-- arrived (Events.Arrivals); before that every slot is a plain zombie.
+		Ripper = RIPPER,
+		-- Variants come along with the zombies, never instead of them (owner
+		-- 2026-10-23: the zombie count must not drop): for each zombie in a
+		-- group one roll, in this order, may add one variant to the group
+		-- (1 in 10 a Brute, owner 2026-10-23: 10%, then 5%, back to 10%; 1 in
+		-- 7 a Spitter; 1 in 10 a Ripper, placeholder). A variant only comes
+		-- once it has arrived (Events.Arrivals).
 		ZombieVariants = table.freeze({
 			table.freeze({ stats = BRUTE, chance = 0.1 }),
 			table.freeze({ stats = SPITTER, chance = 0.15 }),
+			table.freeze({ stats = RIPPER, chance = 0.1 }),
 		}) :: { { stats: MinionStats, chance: number } },
 		-- Continuous spawning, no waves (owner 2026-10-21: tug of war). Every
 		-- GroupInterval seconds each standing barracks sends our group and the
@@ -529,6 +596,24 @@ local Config = table.freeze({
 			slamAngle = 30, -- arms slammed down in front, reached when the hit lands
 			raiseShare = 0.65,
 			recoverTime = 0.4, -- seconds back to the animation's own arms
+		}),
+		-- Ripper swipe (owner 2026-10-23): attacks take turns, a right-hand
+		-- swipe while the body twists toward its left, then a left-hand swipe
+		-- while it twists toward its right, and so on. The claw lands (reach
+		-- checked again) as it crosses the middle, windup + sweep / 2 seconds
+		-- after the attack starts; the whole swipe (windup + sweep + recover)
+		-- fits inside the Ripper's attackInterval. Angles in degrees, added on
+		-- top of the animation (Brute pattern): twist turns the upper body; the
+		-- arm rises to raiseAngle (up over the shoulder) in the windup and claws
+		-- down to strikeAngle (below the resting reach) by the end of the sweep
+		-- (owner 2026-10-23: up then down; a sideways arm swing did not show).
+		RipperSwipeLook = table.freeze({
+			windup = 0.12, -- seconds turning back with the arm raised
+			sweep = 0.22, -- seconds turning across while the claw comes down
+			recover = 0.15, -- seconds back to the animation's own pose
+			twist = 35,
+			raiseAngle = 140,
+			strikeAngle = 30,
 		}),
 		-- Brute hit: a soldier thrown back (stats.knockback) is stunned this long.
 		KnockbackStun = 0.5,
